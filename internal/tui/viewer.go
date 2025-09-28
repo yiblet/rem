@@ -179,17 +179,17 @@ func (q *QueueItem) ClearSearch() {
 }
 
 type Model struct {
-	cursor        int
-	selected      int
-	width         int
-	height        int
-	leftWidth     int
-	rightWidth    int
-	focusedPane   int    // 0 = left, 1 = right
-	searchMode    bool   // true when entering search pattern
-	searchInput   string // current search input
-	searchError   string // search error message
-	items         []*QueueItem
+	cursor      int
+	selected    int
+	width       int
+	height      int
+	leftWidth   int
+	rightWidth  int
+	focusedPane int    // 0 = left, 1 = right
+	searchMode  bool   // true when entering search pattern
+	searchInput string // current search input
+	searchError string // search error message
+	items       []*QueueItem
 }
 
 func NewModel(items []*QueueItem) Model {
@@ -203,6 +203,20 @@ func NewModel(items []*QueueItem) Model {
 	}
 }
 
+// UpdateMockSize is a helper method for testing that simulates a window resize
+func (m *Model) UpdateMockSize(width, height int) {
+	m.width = width
+	m.height = height
+	m.rightWidth = width - m.leftWidth - 3 // Account for borders and spacing
+	if m.rightWidth < 20 {
+		m.rightWidth = 20
+	}
+	// Recalculate wrapped lines for current item when window size changes
+	if m.selected < len(m.items) && len(m.items) > 0 {
+		m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
+	}
+}
+
 func (m Model) Init() tea.Cmd {
 	return nil
 }
@@ -210,178 +224,197 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.rightWidth = msg.Width - m.leftWidth - 3 // Account for borders and spacing
-		if m.rightWidth < 20 {
-			m.rightWidth = 20
-		}
-		// Recalculate wrapped lines for current item when window size changes
-		if m.selected < len(m.items) {
-			m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-		}
-
+		return m.handleWindowResize(msg)
 	case tea.KeyMsg:
-		key := msg.String()
-
-		// Handle search mode first before any other key processing
 		if m.searchMode {
-			switch key {
-			case "enter":
-				// Execute search
-				if m.selected < len(m.items) {
-					item := m.items[m.selected]
-					if err := item.performSearch(m.searchInput); err != nil {
-						m.searchError = err.Error()
-					} else {
-						m.searchError = ""
-						// Jump to first match if found
-						if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
-							// Center the match on screen
-							availableHeight := m.height - 6
-							item.ViewPos = max(0, matchLine-availableHeight/2)
-							item.ViewPos = min(item.ViewPos, m.getMaxScroll(item))
-						}
-					}
-				}
-				m.searchMode = false
-			case "esc":
-				// Cancel search
-				m.searchMode = false
-				m.searchInput = ""
+			return m.handleSearchMode(msg)
+		}
+		return m.handleNormalMode(msg)
+	}
+	return m, nil
+}
+
+func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+	m.rightWidth = msg.Width - m.leftWidth - 3 // Account for borders and spacing
+	if m.rightWidth < 20 {
+		m.rightWidth = 20
+	}
+	// Recalculate wrapped lines for current item when window size changes
+	if m.selected < len(m.items) {
+		m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
+	}
+	return m, nil
+}
+
+func (m Model) handleSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	switch key {
+	case "enter":
+		// Execute search
+		if m.selected < len(m.items) {
+			item := m.items[m.selected]
+			if err := item.performSearch(m.searchInput); err != nil {
+				m.searchError = err.Error()
+			} else {
 				m.searchError = ""
-			case "backspace", "ctrl+h":
-				// Remove last character
-				if len(m.searchInput) > 0 {
-					m.searchInput = m.searchInput[:len(m.searchInput)-1]
-				}
-			default:
-				// Add character to search input (only printable characters)
-				if len(key) == 1 && key[0] >= 32 && key[0] <= 126 {
-					m.searchInput += key
+				// Jump to first match if found
+				if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
+					// Center the match on screen
+					availableHeight := m.height - 6
+					item.ViewPos = max(0, matchLine-availableHeight/2)
+					item.ViewPos = min(item.ViewPos, m.getMaxScroll(item))
 				}
 			}
-		} else {
-			// Handle normal mode keys
-			switch key {
-			case "ctrl+c", "q":
-				return m, tea.Quit
-			case "esc":
-				// Only quit if not in search mode
-				return m, tea.Quit
+		}
+		m.searchMode = false
+	case "esc":
+		// Cancel search
+		m.searchMode = false
+		m.searchInput = ""
+		m.searchError = ""
+	case "backspace", "ctrl+h":
+		// Remove last character
+		if len(m.searchInput) > 0 {
+			m.searchInput = m.searchInput[:len(m.searchInput)-1]
+		}
+	default:
+		// Add character to search input (only printable characters)
+		if len(key) == 1 && key[0] >= 32 && key[0] <= 126 {
+			m.searchInput += key
+		}
+	}
+	return m, nil
+}
 
-			case "tab":
-				// Toggle between left and right pane
-				m.focusedPane = (m.focusedPane + 1) % 2
+func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
 
-			default:
-				// Handle pane-specific controls
-				if m.focusedPane == 0 {
-					// Left pane controls
-					switch key {
-					case "up", "k":
-						if m.cursor > 0 {
-							m.cursor--
-							m.selected = m.cursor
-							// Update wrapped lines for newly selected item
-							if m.selected < len(m.items) {
-								m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-							}
-						}
-					case "down", "j":
-						if m.cursor < len(m.items)-1 {
-							m.cursor++
-							m.selected = m.cursor
-							// Update wrapped lines for newly selected item
-							if m.selected < len(m.items) {
-								m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-							}
-						}
-					}
-				} else {
-					// Right pane controls (pager-like)
-					if m.selected < len(m.items) {
-						item := m.items[m.selected]
-						maxScroll := m.getMaxScroll(item)
+	switch key {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc":
+		// Only quit if not in search mode
+		return m, tea.Quit
+	case "tab":
+		// Toggle between left and right pane
+		m.focusedPane = (m.focusedPane + 1) % 2
+	default:
+		if m.focusedPane == 0 {
+			return m.handleLeftPaneControls(key)
+		}
+		return m.handleRightPaneControls(key)
+	}
+	return m, nil
+}
 
-						// Handle search-related keys first
-						switch key {
-						case "/", "?":
-							// Start search mode (forward or backward)
-							m.searchMode = true
-							m.searchInput = ""
-							m.searchError = ""
-						case "n":
-							// Next search match
-							if item.NextMatch() {
-								if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
-									// Center the match on screen
-									availableHeight := m.height - 6
-									item.ViewPos = max(0, matchLine-availableHeight/2)
-									item.ViewPos = min(item.ViewPos, maxScroll)
-								}
-							}
-						case "N":
-							// Previous search match
-							if item.PrevMatch() {
-								if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
-									// Center the match on screen
-									availableHeight := m.height - 6
-									item.ViewPos = max(0, matchLine-availableHeight/2)
-									item.ViewPos = min(item.ViewPos, maxScroll)
-								}
-							}
-						default:
-							// Handle number prefixes (e.g., "10j", "5k")
-							if matched, _ := regexp.MatchString(`^\d+[jk]$`, key); matched {
-								numStr := key[:len(key)-1]
-								direction := key[len(key)-1:]
-								if num, err := strconv.Atoi(numStr); err == nil {
-									if direction == "j" {
-										item.ViewPos = min(item.ViewPos+num, maxScroll)
-									} else if direction == "k" {
-										item.ViewPos = max(item.ViewPos-num, 0)
-									}
-								}
-							} else {
-								switch key {
-								case "up", "k":
-									if item.ViewPos > 0 {
-										item.ViewPos--
-									}
-								case "down", "j":
-									if item.ViewPos < maxScroll {
-										item.ViewPos++
-									}
-								case "g":
-									item.ViewPos = 0 // Go to top
-								case "G":
-									item.ViewPos = maxScroll // Go to bottom
-								case "ctrl+u":
-									// Page up (half page)
-									pageSize := (m.height - 6) / 2
-									item.ViewPos = max(item.ViewPos-pageSize, 0)
-								case "ctrl+d":
-									// Page down (half page)
-									pageSize := (m.height - 6) / 2
-									item.ViewPos = min(item.ViewPos+pageSize, maxScroll)
-								case "ctrl+b":
-									// Full page up
-									pageSize := m.height - 6
-									item.ViewPos = max(item.ViewPos-pageSize, 0)
-								case "ctrl+f":
-									// Full page down
-									pageSize := m.height - 6
-									item.ViewPos = min(item.ViewPos+pageSize, maxScroll)
-								}
-							}
-						}
-					}
-				}
+func (m Model) handleLeftPaneControls(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+			m.selected = m.cursor
+			// Update wrapped lines for newly selected item
+			if m.selected < len(m.items) {
+				m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
+			}
+		}
+	case "down", "j":
+		if m.cursor < len(m.items)-1 {
+			m.cursor++
+			m.selected = m.cursor
+			// Update wrapped lines for newly selected item
+			if m.selected < len(m.items) {
+				m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
 			}
 		}
 	}
+	return m, nil
+}
 
+func (m Model) handleRightPaneControls(key string) (tea.Model, tea.Cmd) {
+	if m.selected >= len(m.items) {
+		return m, nil
+	}
+
+	item := m.items[m.selected]
+	maxScroll := m.getMaxScroll(item)
+
+	// Handle search-related keys first
+	switch key {
+	case "/", "?":
+		// Start search mode (forward or backward)
+		m.searchMode = true
+		m.searchInput = ""
+		m.searchError = ""
+	case "n":
+		// Next search match
+		if item.NextMatch() {
+			if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
+				// Center the match on screen
+				availableHeight := m.height - 6
+				item.ViewPos = max(0, matchLine-availableHeight/2)
+				item.ViewPos = min(item.ViewPos, maxScroll)
+			}
+		}
+	case "N":
+		// Previous search match
+		if item.PrevMatch() {
+			if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
+				// Center the match on screen
+				availableHeight := m.height - 6
+				item.ViewPos = max(0, matchLine-availableHeight/2)
+				item.ViewPos = min(item.ViewPos, maxScroll)
+			}
+		}
+	default:
+		// Handle number prefixes (e.g., "10j", "5k")
+		if matched, _ := regexp.MatchString(`^\d+[jk]$`, key); matched {
+			numStr := key[:len(key)-1]
+			direction := key[len(key)-1:]
+			if num, err := strconv.Atoi(numStr); err == nil {
+				switch direction {
+				case "j":
+					item.ViewPos = min(item.ViewPos+num, maxScroll)
+				case "k":
+					item.ViewPos = max(item.ViewPos-num, 0)
+				}
+			}
+		} else {
+			switch key {
+			case "up", "k":
+				if item.ViewPos > 0 {
+					item.ViewPos--
+				}
+			case "down", "j":
+				if item.ViewPos < maxScroll {
+					item.ViewPos++
+				}
+			case "g":
+				item.ViewPos = 0 // Go to top
+			case "G":
+				item.ViewPos = maxScroll // Go to bottom
+			case "ctrl+u":
+				// Page up (half page)
+				pageSize := (m.height - 6) / 2
+				item.ViewPos = max(item.ViewPos-pageSize, 0)
+			case "ctrl+d":
+				// Page down (half page)
+				pageSize := (m.height - 6) / 2
+				item.ViewPos = min(item.ViewPos+pageSize, maxScroll)
+			case "ctrl+b":
+				// Full page up
+				pageSize := m.height - 6
+				item.ViewPos = max(item.ViewPos-pageSize, 0)
+			case "ctrl+f":
+				// Full page down
+				pageSize := m.height - 6
+				item.ViewPos = min(item.ViewPos+pageSize, maxScroll)
+			}
+		}
+	}
 	return m, nil
 }
 
@@ -414,15 +447,17 @@ func (m Model) View() string {
 			rightLine = rightLines[i]
 		}
 
-		// Pad left line to ensure consistent spacing
-		for len(leftLine) < m.leftWidth {
-			leftLine += " "
-		}
-
+		// Don't pad the left line - lipgloss has already rendered it with proper width and borders
+		// Just add a single space as separator between panes
 		result.WriteString(leftLine + " " + rightLine + "\n")
 	}
 
-	// Add status line at bottom
+	result.WriteString("\n" + m.renderStatusLine())
+
+	return result.String()
+}
+
+func (m Model) renderStatusLine() string {
 	var statusLine string
 	if m.searchMode {
 		// Show search input with cursor
@@ -450,9 +485,7 @@ func (m Model) View() string {
 	statusStyle := lipgloss.NewStyle().
 		Width(m.width)
 
-	result.WriteString("\n" + statusStyle.Render(statusLine))
-
-	return result.String()
+	return statusStyle.Render(statusLine)
 }
 
 func (m Model) renderLeftPane() string {
@@ -462,12 +495,11 @@ func (m Model) renderLeftPane() string {
 	}
 
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(borderColor)).
 		Padding(0, 1).
-		Width(m.leftWidth - 2).
+		Width(m.leftWidth).
 		Height(m.height - 4).
-		MaxWidth(m.leftWidth - 2). // Prevent any overflow
 		Inline(false)
 
 	var content strings.Builder
@@ -501,7 +533,7 @@ func (m Model) renderLeftPane() string {
 			line = lipgloss.NewStyle().
 				Background(lipgloss.Color("62")).
 				Foreground(lipgloss.Color("230")).
-				Width(m.leftWidth-4). // Force width constraint
+				Width(m.leftWidth - 4). // Force width constraint
 				Render(line)
 		}
 
@@ -511,14 +543,19 @@ func (m Model) renderLeftPane() string {
 	return style.Render(content.String())
 }
 
+
 func (m Model) renderRightPane() string {
 	borderColor := "62"
 	if m.focusedPane == 1 {
 		borderColor = "205" // Highlight focused pane
+		if m.searchMode {
+			// show the border in yellow when in search mode
+			borderColor = "220"
+		}
 	}
 
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(borderColor)).
 		Padding(0, 1).
 		Width(m.rightWidth - 2).
@@ -718,3 +755,4 @@ func wrapText(text string, width int) string {
 
 	return result.String()
 }
+
