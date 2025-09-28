@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	MaxQueueSize = 20
+	MaxStackSize = 20
 	ContentDir   = "content"
 )
 
@@ -24,21 +24,21 @@ type FileSystem interface {
 	MkdirAll(name string, perm fs.FileMode) error
 }
 
-// QueueManager manages the persistent FIFO queue
-type QueueManager struct {
+// StackManager manages the persistent LIFO stack
+type StackManager struct {
 	fs FileSystem
 }
 
-// QueueItem represents a single item in the queue
-type QueueItem struct {
+// StackItem represents a single item in the stack
+type StackItem struct {
 	Timestamp time.Time
 	FilePath  string
 	Preview   string
 }
 
-// NewQueueManager creates a new queue manager with the provided filesystem
-func NewQueueManager(filesystem FileSystem) (*QueueManager, error) {
-	qm := &QueueManager{fs: filesystem}
+// NewStackManager creates a new stack manager with the provided filesystem
+func NewStackManager(filesystem FileSystem) (*StackManager, error) {
+	qm := &StackManager{fs: filesystem}
 
 	// Ensure content directory exists
 	if err := qm.fs.MkdirAll(ContentDir, 0755); err != nil {
@@ -49,12 +49,12 @@ func NewQueueManager(filesystem FileSystem) (*QueueManager, error) {
 }
 
 // FileSystem returns the underlying filesystem
-func (qm *QueueManager) FileSystem() FileSystem {
+func (qm *StackManager) FileSystem() FileSystem {
 	return qm.fs
 }
 
-// Enqueue adds a new item to the queue from an io.Reader
-func (qm *QueueManager) Enqueue(content io.Reader) (*QueueItem, error) {
+// Push adds a new item to the stack from an io.Reader
+func (qm *StackManager) Push(content io.Reader) (*StackItem, error) {
 	now := time.Now()
 	filename := now.Format("2006-01-02T15-04-05.000000Z07-00") + ".txt"
 	filePath := filepath.Join(ContentDir, filename)
@@ -77,7 +77,7 @@ func (qm *QueueManager) Enqueue(content io.Reader) (*QueueItem, error) {
 	// Generate preview
 	preview := qm.generatePreview(data)
 
-	item := &QueueItem{
+	item := &StackItem{
 		Timestamp: now,
 		FilePath:  filePath,
 		Preview:   preview,
@@ -92,7 +92,7 @@ func (qm *QueueManager) Enqueue(content io.Reader) (*QueueItem, error) {
 }
 
 // generatePreview creates a preview string for the content
-func (qm *QueueManager) generatePreview(data []byte) string {
+func (qm *StackManager) generatePreview(data []byte) string {
 	// Use first 100 bytes for preview
 	previewLen := len(data)
 	if previewLen > 100 {
@@ -120,8 +120,8 @@ func (qm *QueueManager) generatePreview(data []byte) string {
 	return previewStr
 }
 
-// cleanupOldFiles removes the oldest files if queue exceeds MaxQueueSize
-func (qm *QueueManager) cleanupOldFiles() error {
+// cleanupOldFiles removes the oldest files if stack exceeds MaxStackSize
+func (qm *StackManager) cleanupOldFiles() error {
 	files, err := qm.fs.ReadDir(ContentDir)
 	if err != nil {
 		return fmt.Errorf("failed to read content directory: %w", err)
@@ -135,8 +135,8 @@ func (qm *QueueManager) cleanupOldFiles() error {
 		}
 	}
 
-	// If we have MaxQueueSize or fewer files, no cleanup needed
-	if len(contentFiles) <= MaxQueueSize {
+	// If we have MaxStackSize or fewer files, no cleanup needed
+	if len(contentFiles) <= MaxStackSize {
 		return nil
 	}
 
@@ -145,8 +145,8 @@ func (qm *QueueManager) cleanupOldFiles() error {
 		return contentFiles[i].Name() < contentFiles[j].Name()
 	})
 
-	// Remove oldest files to get back to MaxQueueSize
-	filesToRemove := len(contentFiles) - MaxQueueSize
+	// Remove oldest files to get back to MaxStackSize
+	filesToRemove := len(contentFiles) - MaxStackSize
 	for i := 0; i < filesToRemove; i++ {
 		filePath := filepath.Join(ContentDir, contentFiles[i].Name())
 		if err := qm.fs.Remove(filePath); err != nil {
@@ -157,14 +157,14 @@ func (qm *QueueManager) cleanupOldFiles() error {
 	return nil
 }
 
-// List returns all items in the queue, sorted by timestamp (newest first)
-func (qm *QueueManager) List() ([]*QueueItem, error) {
+// List returns all items in the stack, sorted by timestamp (newest first - LIFO order)
+func (qm *StackManager) List() ([]*StackItem, error) {
 	files, err := qm.fs.ReadDir(ContentDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read content directory: %w", err)
 	}
 
-	var items []*QueueItem
+	var items []*StackItem
 	for _, file := range files {
 		if file.IsDir() || !strings.HasSuffix(file.Name(), ".txt") {
 			continue
@@ -183,14 +183,14 @@ func (qm *QueueManager) List() ([]*QueueItem, error) {
 			preview = filename // Fallback to filename
 		}
 
-		items = append(items, &QueueItem{
+		items = append(items, &StackItem{
 			Timestamp: timestamp,
 			FilePath:  filePath,
 			Preview:   preview,
 		})
 	}
 
-	// Sort by timestamp, newest first (reverse chronological order)
+	// Sort by timestamp, newest first (LIFO - Last In, First Out)
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Timestamp.After(items[j].Timestamp)
 	})
@@ -199,7 +199,7 @@ func (qm *QueueManager) List() ([]*QueueItem, error) {
 }
 
 // generatePreviewFromFile creates a preview from a file path
-func (qm *QueueManager) generatePreviewFromFile(filePath string) (string, error) {
+func (qm *StackManager) generatePreviewFromFile(filePath string) (string, error) {
 	file, err := qm.fs.Open(filePath)
 	if err != nil {
 		return "", err
@@ -216,8 +216,8 @@ func (qm *QueueManager) generatePreviewFromFile(filePath string) (string, error)
 	return qm.generatePreview(preview[:n]), nil
 }
 
-// Get returns the item at the specified index (0 = newest)
-func (qm *QueueManager) Get(index int) (*QueueItem, error) {
+// Get returns the item at the specified index (0 = top of stack, newest)
+func (qm *StackManager) Get(index int) (*StackItem, error) {
 	items, err := qm.List()
 	if err != nil {
 		return nil, err
@@ -230,8 +230,8 @@ func (qm *QueueManager) Get(index int) (*QueueItem, error) {
 	return items[index], nil
 }
 
-// Size returns the number of items in the queue
-func (qm *QueueManager) Size() (int, error) {
+// Size returns the number of items in the stack
+func (qm *StackManager) Size() (int, error) {
 	items, err := qm.List()
 	if err != nil {
 		return 0, err
@@ -240,7 +240,7 @@ func (qm *QueueManager) Size() (int, error) {
 }
 
 // GetContentReader returns an io.ReadSeekCloser for the item's content
-func (item *QueueItem) GetContentReader(fs FileSystem) (io.ReadSeekCloser, error) {
+func (item *StackItem) GetContentReader(fs FileSystem) (io.ReadSeekCloser, error) {
 	file, err := fs.Open(item.FilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open content file: %w", err)
@@ -276,8 +276,8 @@ func (w *readSeekCloserWrapper) Seek(offset int64, whence int) (int64, error) {
 	return 0, fmt.Errorf("seek not supported")
 }
 
-// Delete removes the item from the queue
-func (qm *QueueManager) Delete(index int) error {
+// Delete removes the item from the stack
+func (qm *StackManager) Delete(index int) error {
 	item, err := qm.Get(index)
 	if err != nil {
 		return err
@@ -288,4 +288,18 @@ func (qm *QueueManager) Delete(index int) error {
 	}
 
 	return nil
+}
+
+// Legacy type aliases for backward compatibility
+type QueueManager = StackManager
+type QueueItem = StackItem
+
+// Legacy function aliases for backward compatibility
+func NewQueueManager(filesystem FileSystem) (*StackManager, error) {
+	return NewStackManager(filesystem)
+}
+
+// Legacy method aliases for backward compatibility
+func (qm *StackManager) Enqueue(content io.Reader) (*StackItem, error) {
+	return qm.Push(content)
 }

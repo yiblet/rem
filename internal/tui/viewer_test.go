@@ -142,6 +142,6 @@ func TestModelViewPanesAlignment(t *testing.T) {
 	if firstBorder == -1 || lastBorder == -1 || firstBorder == lastBorder {
 		t.Errorf("Left pane should have both left and right borders. First: %d, Last: %d", firstBorder, lastBorder)
 	} else {
-		t.Logf("✅ Both borders found: left at %d, right at %d", firstBorder, lastBorder)
+		t.Logf("Both borders found: left at %d, right at %d", firstBorder, lastBorder)
 	}
 }

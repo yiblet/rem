@@ -1,6 +1,6 @@
 # rem - Enhanced Clipboard Stack Manager
 
-A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a persistent stack of clipboard history.
+A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a persistent LIFO stack of clipboard history.
 
 ## Overview
 
@@ -25,7 +25,9 @@ A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a 
 
 ```bash
 # Launch interactive dual-pane viewer
-rem view
+rem get
+# or simply
+rem
 ```
 
 The interactive viewer displays:
@@ -36,26 +38,37 @@ The interactive viewer displays:
 
 ```bash
 # Output the nth entry from the stack (0-indexed)
-rem view 0    # Outputs the most recent entry (same as pbpaste)
-rem view 1    # Outputs the second most recent entry
-rem view 5    # Outputs the 6th most recent entry
+rem get 0     # Outputs the most recent entry (top of stack)
+rem get 1     # Outputs the second most recent entry
+rem get 5     # Outputs the 6th most recent entry
+
+# Copy to clipboard
+rem get -c 0  # Copy most recent entry to clipboard
+rem get -c 2  # Copy third most recent entry to clipboard
+
+# Save to file
+rem get 0 output.txt  # Save most recent entry to file
 ```
 
 ### Add to Stack
 
 ```bash
-# Pipe content directly into the stack
-echo "test content" | rem in
+# Push content from stdin to top of stack
+echo "test content" | rem store
 
-# Add current clipboard content to stack
-rem clip
+# Push file content to stack
+rem store filename.txt
+
+# Push current clipboard content to stack
+rem store -c
 ```
 
-## Stack Behavior
+## Stack Behavior (LIFO)
 
-- **Position 0**: Always contains the current clipboard content (equivalent to `pbpaste`)
-- **Positions 1-19**: Historical clipboard entries, with newer entries pushing older ones down
+- **Position 0**: Top of stack - most recently added item
+- **Positions 1-19**: Historical entries in reverse chronological order (newer items push older ones down)
 - **Automatic Management**: Oldest entries are automatically removed when the stack exceeds 20 items
+- **LIFO (Last In, First Out)**: Most recent content is always accessible at index 0
 
 ## Configuration
 
@@ -66,25 +79,28 @@ The clipboard history is stored in a local configuration folder, typically locat
 ## Examples
 
 ```bash
-# Copy something to clipboard
-echo "Hello World" | pbcopy
+# Push content to stack from stdin
+echo "Hello World" | rem store
 
-# Add it to rem stack
-rem clip
-
-# Copy something else
-echo "Second entry" | pbcopy
+# Push another item
+echo "Second entry" | rem store
 
 # View the stack interactively
-rem view
+rem get
+# or simply: rem
 
-# Get the previous entry without interactive mode
-rem view 1  # Outputs "Hello World"
+# Get specific entries without interactive mode
+rem get 0     # Outputs "Second entry" (most recent)
+rem get 1     # Outputs "Hello World" (previous)
 
-# Pipe new content directly
-echo "Direct input" | rem in
+# Push content from clipboard
+rem store -c
 
-# Now position 0 has "Direct input", position 1 has "Second entry"
+# Push content from file
+rem store myfile.txt
+
+# Copy stack item to clipboard
+rem get -c 0  # Copy top of stack to clipboard
 ```
 
 ## Use Cases

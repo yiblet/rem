@@ -180,8 +180,8 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
-	// Add more than MaxQueueSize items
-	for i := 0; i < MaxQueueSize+5; i++ {
+	// Add more than MaxStackSize items
+	for i := 0; i < MaxStackSize+5; i++ {
 		content := strings.NewReader(fmt.Sprintf("Content %d", i))
 		_, err := qm.Enqueue(content)
 		if err != nil {
@@ -189,14 +189,14 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		}
 	}
 
-	// Check that size is limited to MaxQueueSize
+	// Check that size is limited to MaxStackSize
 	size, err := qm.Size()
 	if err != nil {
 		t.Fatalf("Failed to get size: %v", err)
 	}
 
-	if size != MaxQueueSize {
-		t.Errorf("Expected size %d, got %d", MaxQueueSize, size)
+	if size != MaxStackSize {
+		t.Errorf("Expected size %d, got %d", MaxStackSize, size)
 	}
 
 	// Check that newest items are kept (should have items 5-24)

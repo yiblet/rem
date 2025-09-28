@@ -11,43 +11,43 @@ import (
 )
 
 func main() {
-	fmt.Println("🧪 Testing TUI Border Fix")
+	fmt.Println("Testing TUI Border Fix")
 	fmt.Println("=========================")
 
-	// Create filesystem and queue manager
+	// Create filesystem and stack manager
 	remFS, err := remfs.New()
 	if err != nil {
 		log.Fatalf("Error creating rem filesystem: %v", err)
 	}
 
-	qm, err := queue.NewQueueManager(remFS)
+	sm, err := queue.NewStackManager(remFS)
 	if err != nil {
-		log.Fatalf("Error creating queue manager: %v", err)
+		log.Fatalf("Error creating stack manager: %v", err)
 	}
 
-	// Get items from queue
-	queueItems, err := qm.List()
+	// Get items from stack
+	stackItems, err := sm.List()
 	if err != nil {
-		log.Fatalf("Error listing queue items: %v", err)
+		log.Fatalf("Error listing stack items: %v", err)
 	}
 
-	if len(queueItems) == 0 {
-		fmt.Println("No items in queue. Run 'go run ./cmd/demo/' first.")
+	if len(stackItems) == 0 {
+		fmt.Println("No items in stack. Run 'go run ./cmd/demo/' first.")
 		return
 	}
 
-	// Convert queue items to TUI items
-	var tuiItems []*tui.QueueItem
-	for _, qItem := range queueItems[:min(5, len(queueItems))] { // Take first 5 items
-		contentReader, err := qItem.GetContentReader(qm.FileSystem())
+	// Convert stack items to TUI items
+	var tuiItems []*tui.StackItem
+	for _, sItem := range stackItems[:min(5, len(stackItems))] { // Take first 5 items
+		contentReader, err := sItem.GetContentReader(sm.FileSystem())
 		if err != nil {
 			fmt.Printf("Error getting content reader: %v\n", err)
 			continue
 		}
 
-		tuiItem := &tui.QueueItem{
+		tuiItem := &tui.StackItem{
 			Content: contentReader,
-			Preview: qItem.Preview,
+			Preview: sItem.Preview,
 			ViewPos: 0,
 		}
 		tuiItems = append(tuiItems, tuiItem)
@@ -94,17 +94,17 @@ func main() {
 		fmt.Printf("Found border characters (│) at positions: %v\n", borderPositions)
 
 		if len(borderPositions) >= 2 {
-			fmt.Printf("✅ Both left pane borders are present!\n")
+			fmt.Printf("Both left pane borders are present!\n")
 			fmt.Printf("   Left border at position: %d\n", borderPositions[0])
 			fmt.Printf("   Right border at position: %d\n", borderPositions[len(borderPositions)-1])
 		} else {
-			fmt.Printf("❌ Missing border characters\n")
+			fmt.Printf("Missing border characters\n")
 		}
 	} else {
-		fmt.Printf("❌ Could not find a line with borders to analyze\n")
+		fmt.Printf("Could not find a line with borders to analyze\n")
 	}
 
-	fmt.Println("\n✅ Border fix verification complete!")
+	fmt.Println("\nBorder fix verification complete!")
 }
 
 func min(a, b int) int {

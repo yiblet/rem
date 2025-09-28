@@ -56,8 +56,8 @@ func (s *StringReadSeekCloser) Close() error {
 	return nil
 }
 
-// QueueItem represents an item in the rem queue
-type QueueItem struct {
+// StackItem represents an item in the rem stack
+type StackItem struct {
 	Content       io.ReadSeekCloser
 	Preview       string
 	Lines         []string // cached wrapped lines
@@ -68,7 +68,7 @@ type QueueItem struct {
 }
 
 // GetFullContent reads the entire content from the ReadSeekCloser
-func (q *QueueItem) GetFullContent() (string, error) {
+func (q *StackItem) GetFullContent() (string, error) {
 	// Save current position
 	currentPos, err := q.Content.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -94,7 +94,7 @@ func (q *QueueItem) GetFullContent() (string, error) {
 }
 
 // UpdateWrappedLines recalculates wrapped lines based on width
-func (q *QueueItem) UpdateWrappedLines(width int) error {
+func (q *StackItem) UpdateWrappedLines(width int) error {
 	content, err := q.GetFullContent()
 	if err != nil {
 		return err
@@ -111,7 +111,7 @@ func (q *QueueItem) UpdateWrappedLines(width int) error {
 }
 
 // performSearch searches for a regex pattern and populates SearchMatches
-func (q *QueueItem) performSearch(pattern string) error {
+func (q *StackItem) performSearch(pattern string) error {
 	if pattern == "" {
 		q.SearchPattern = ""
 		q.SearchMatches = nil
@@ -144,7 +144,7 @@ func (q *QueueItem) performSearch(pattern string) error {
 }
 
 // NextMatch moves to the next search match
-func (q *QueueItem) NextMatch() bool {
+func (q *StackItem) NextMatch() bool {
 	if len(q.SearchMatches) == 0 {
 		return false
 	}
@@ -154,7 +154,7 @@ func (q *QueueItem) NextMatch() bool {
 }
 
 // PrevMatch moves to the previous search match
-func (q *QueueItem) PrevMatch() bool {
+func (q *StackItem) PrevMatch() bool {
 	if len(q.SearchMatches) == 0 {
 		return false
 	}
@@ -164,7 +164,7 @@ func (q *QueueItem) PrevMatch() bool {
 }
 
 // GetCurrentMatchLine returns the line number of the current match
-func (q *QueueItem) GetCurrentMatchLine() int {
+func (q *StackItem) GetCurrentMatchLine() int {
 	if q.SearchIndex >= 0 && q.SearchIndex < len(q.SearchMatches) {
 		return q.SearchMatches[q.SearchIndex]
 	}
@@ -172,7 +172,7 @@ func (q *QueueItem) GetCurrentMatchLine() int {
 }
 
 // ClearSearch clears the current search
-func (q *QueueItem) ClearSearch() {
+func (q *StackItem) ClearSearch() {
 	q.SearchPattern = ""
 	q.SearchMatches = nil
 	q.SearchIndex = -1
@@ -189,10 +189,10 @@ type Model struct {
 	searchMode  bool   // true when entering search pattern
 	searchInput string // current search input
 	searchError string // search error message
-	items       []*QueueItem
+	items       []*StackItem
 }
 
-func NewModel(items []*QueueItem) Model {
+func NewModel(items []*StackItem) Model {
 	return Model{
 		cursor:      0,
 		selected:    0,
@@ -652,13 +652,16 @@ func (m Model) renderRightPane() string {
 	return style.Render(content.String())
 }
 
-func (m Model) getMaxScroll(item *QueueItem) int {
+func (m Model) getMaxScroll(item *StackItem) int {
 	availableHeight := m.height - 6 // Account for borders and headers
 	if len(item.Lines) <= availableHeight {
 		return 0
 	}
 	return len(item.Lines) - availableHeight
 }
+
+// Legacy type alias for backward compatibility
+type QueueItem = StackItem
 
 func min(a, b int) int {
 	if a < b {

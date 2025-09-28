@@ -10,55 +10,55 @@ import (
 )
 
 func main() {
-	fmt.Println("🔥 rem Queue Manager Demo")
+	fmt.Println("rem Stack Manager Demo")
 
-	// Create filesystem and queue manager
+	// Create filesystem and stack manager
 	remFS, err := remfs.New()
 	if err != nil {
 		log.Fatalf("Failed to create rem filesystem: %v", err)
 	}
 
-	qm, err := queue.NewQueueManager(remFS)
+	sm, err := queue.NewStackManager(remFS)
 	if err != nil {
-		log.Fatalf("Failed to create queue manager: %v", err)
+		log.Fatalf("Failed to create stack manager: %v", err)
 	}
 
 	// Show initial state
-	size, err := qm.Size()
+	size, err := sm.Size()
 	if err != nil {
 		log.Fatalf("Failed to get size: %v", err)
 	}
-	fmt.Printf("Initial queue size: %d\n\n", size)
+	fmt.Printf("Initial stack size: %d\n\n", size)
 
 	// Add some test content
 	testContent := []string{
-		"Hello, World! This is the first item in our queue.",
+		"Hello, World! This is the first item in our stack.",
 		"package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, Go!\")\n}",
 		"#!/bin/bash\necho \"Starting script...\"\nfor i in {1..5}; do\n    echo \"Processing $i\"\ndone",
 		"SELECT * FROM users WHERE created_at > '2023-01-01' ORDER BY created_at DESC LIMIT 10;",
 		"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
 	}
 
-	fmt.Println("📥 Adding items to queue:")
+	fmt.Println("Adding items to stack:")
 	for i, content := range testContent {
-		item, err := qm.Enqueue(strings.NewReader(content))
+		item, err := sm.Push(strings.NewReader(content))
 		if err != nil {
-			log.Printf("Failed to enqueue item %d: %v", i, err)
+			log.Printf("Failed to push item %d: %v", i, err)
 			continue
 		}
 		fmt.Printf("%d. %s\n", i+1, item.Preview)
 	}
 
 	// Show final state
-	size, err = qm.Size()
+	size, err = sm.Size()
 	if err != nil {
 		log.Fatalf("Failed to get final size: %v", err)
 	}
-	fmt.Printf("\nFinal queue size: %d\n\n", size)
+	fmt.Printf("\nFinal stack size: %d\n\n", size)
 
 	// List all items
-	fmt.Println("📋 Queue contents (newest first):")
-	items, err := qm.List()
+	fmt.Println("Stack contents (newest first - LIFO):")
+	items, err := sm.List()
 	if err != nil {
 		log.Fatalf("Failed to list items: %v", err)
 	}
@@ -69,8 +69,8 @@ func main() {
 
 	// Demonstrate getting specific item
 	if len(items) > 0 {
-		fmt.Printf("\n📄 Content of item 0 (newest):\n")
-		reader, err := items[0].GetContentReader(qm.FileSystem())
+		fmt.Printf("\nContent of item 0 (newest):\n")
+		reader, err := items[0].GetContentReader(sm.FileSystem())
 		if err != nil {
 			log.Printf("Failed to get content reader: %v", err)
 		} else {
@@ -87,5 +87,5 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\n✅ Demo complete! Queue stored in: ~/.config/rem/content/\n")
+	fmt.Printf("\nDemo complete! Stack stored in: ~/.config/rem/content/\n")
 }

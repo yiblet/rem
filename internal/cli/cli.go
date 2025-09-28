@@ -1,0 +1,256 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yiblet/rem/internal/queue"
+	"github.com/yiblet/rem/internal/remfs"
+	"github.com/yiblet/rem/internal/tui"
+	"golang.design/x/clipboard"
+)
+
+// CLI handles the command-line interface
+type CLI struct {
+	stackManager *queue.StackManager
+	filesystem   queue.FileSystem
+}
+
+// New creates a new CLI instance
+func New() (*CLI, error) {
+	// Create filesystem rooted at rem config directory
+	remFS, err := remfs.New()
+	if err != nil {
+		return nil, fmt.Errorf("error creating rem filesystem: %w", err)
+	}
+
+	// Create stack manager
+	sm, err := queue.NewStackManager(remFS)
+	if err != nil {
+		return nil, fmt.Errorf("error creating queue manager: %w", err)
+	}
+
+	return &CLI{
+		stackManager: sm,
+		filesystem:   remFS,
+	}, nil
+}
+
+// Execute runs the CLI command based on parsed arguments
+func (c *CLI) Execute(args *Args) error {
+	if err := args.Validate(); err != nil {
+		return err
+	}
+
+	switch {
+	case args.Store != nil:
+		return c.executeStore(args.Store)
+	case args.Get != nil:
+		return c.executeGet(args.Get)
+	default:
+		// Default behavior: launch TUI
+		return c.launchTUI()
+	}
+}
+
+// executeStore handles the 'rem store' command
+func (c *CLI) executeStore(cmd *StoreCmd) error {
+	var content io.ReadSeeker
+	var err error
+
+	switch {
+	case cmd.Clipboard:
+		// Read from clipboard
+		content, err = c.readFromClipboard()
+	case cmd.File != nil:
+		// Read from file
+		content, err = c.readFromFile(*cmd.File)
+	default:
+		// Read from stdin
+		content, err = c.readFromStdin()
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to read content: %w", err)
+	}
+
+	// Store content in stack
+	item, err := c.stackManager.Push(content)
+	if err != nil {
+		return fmt.Errorf("failed to store content: %w", err)
+	}
+
+	fmt.Printf("Stored: %s\n", item.Preview)
+	return nil
+}
+
+// executeGet handles the 'rem get' command
+func (c *CLI) executeGet(cmd *GetCmd) error {
+	if cmd.Index == nil {
+		// No index specified, launch TUI
+		return c.launchTUI()
+	}
+
+	index := *cmd.Index
+
+	// Get item from stack
+	item, err := c.stackManager.Get(index)
+	if err != nil {
+		return fmt.Errorf("failed to get item at index %d: %w", index, err)
+	}
+
+	// Get content reader
+	reader, err := item.GetContentReader(c.filesystem)
+	if err != nil {
+		return fmt.Errorf("failed to read content: %w", err)
+	}
+	defer reader.Close()
+
+	// Read all content
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return fmt.Errorf("failed to read content: %w", err)
+	}
+
+	switch {
+	case cmd.Clipboard:
+		// Copy to clipboard
+		return c.writeToClipboard(content)
+	case cmd.File != nil:
+		// Write to file
+		return c.writeToFile(*cmd.File, content)
+	default:
+		// Write to stdout
+		_, err = os.Stdout.Write(content)
+		return err
+	}
+}
+
+// launchTUI starts the interactive TUI
+func (c *CLI) launchTUI() error {
+	// Get items from stack
+	stackItems, err := c.stackManager.List()
+	if err != nil {
+		return fmt.Errorf("error listing queue items: %w", err)
+	}
+
+	// Convert stack items to TUI items
+	var tuiItems []*tui.StackItem
+	for _, sItem := range stackItems {
+		// Get content reader
+		contentReader, err := sItem.GetContentReader(c.stackManager.FileSystem())
+		if err != nil {
+			fmt.Printf("Warning: Error getting content reader: %v\n", err)
+			continue
+		}
+
+		tuiItem := &tui.StackItem{
+			Content: contentReader,
+			Preview: sItem.Preview,
+			ViewPos: 0,
+		}
+		tuiItems = append(tuiItems, tuiItem)
+	}
+
+	// If no items in stack, show a helpful message
+	if len(tuiItems) == 0 {
+		fmt.Println("Stack is empty!")
+		fmt.Println()
+		fmt.Println("To add items to the stack:")
+		fmt.Printf("  echo \"Hello World\" | rem store\n")
+		fmt.Printf("  rem store filename.txt\n")
+		fmt.Printf("  rem store -c  # from clipboard\n")
+		return nil
+	}
+
+	model := tui.NewModel(tuiItems)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	_, err = p.Run()
+	return err
+}
+
+// readFromClipboard reads content from system clipboard
+func (c *CLI) readFromClipboard() (io.ReadSeeker, error) {
+	err := clipboard.Init()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize clipboard: %w", err)
+	}
+
+	data := clipboard.Read(clipboard.FmtText)
+	if len(data) == 0 {
+		return nil, fmt.Errorf("clipboard is empty")
+	}
+
+	return strings.NewReader(string(data)), nil
+}
+
+// readFromFile reads content from a file
+func (c *CLI) readFromFile(filename string) (io.ReadSeeker, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.NewReader(string(data)), nil
+}
+
+// readFromStdin reads content from stdin
+func (c *CLI) readFromStdin() (io.ReadSeeker, error) {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data) == 0 {
+		return nil, fmt.Errorf("no input provided")
+	}
+
+	return strings.NewReader(string(data)), nil
+}
+
+// writeToClipboard writes content to system clipboard
+func (c *CLI) writeToClipboard(content []byte) error {
+	err := clipboard.Init()
+	if err != nil {
+		return fmt.Errorf("failed to initialize clipboard: %w", err)
+	}
+
+	clipboard.Write(clipboard.FmtText, content)
+	fmt.Printf("Copied to clipboard: %s\n", c.truncatePreview(string(content)))
+	return nil
+}
+
+// writeToFile writes content to a file
+func (c *CLI) writeToFile(filename string, content []byte) error {
+	err := os.WriteFile(filename, content, 0644)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Written to %s: %s\n", filename, c.truncatePreview(string(content)))
+	return nil
+}
+
+// truncatePreview creates a truncated preview of content for display
+func (c *CLI) truncatePreview(content string) string {
+	const maxLength = 80
+
+	// Replace newlines with spaces for preview
+	preview := strings.ReplaceAll(content, "\n", " ")
+	preview = strings.TrimSpace(preview)
+
+	if len(preview) <= maxLength {
+		return preview
+	}
+
+	return preview[:maxLength-3] + "..."
+}

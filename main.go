@@ -4,76 +4,37 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/yiblet/rem/internal/queue"
-	"github.com/yiblet/rem/internal/remfs"
-	"github.com/yiblet/rem/internal/tui"
+	"github.com/alexflint/go-arg"
+	"github.com/yiblet/rem/internal/cli"
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "debug" {
-		// Keep the old debug functionality for testing
-		fmt.Println("Use the interactive mode instead: just run 'go run main.go'")
-		return
+	// Parse command-line arguments
+	var args cli.Args
+	parser := arg.MustParse(&args)
+
+	// If no subcommand provided, show help or launch TUI
+	if args.Store == nil && args.Get == nil {
+		// Default behavior: launch TUI (same as 'rem get')
+		args.Get = &cli.GetCmd{}
 	}
 
-	// Create filesystem rooted at rem config directory
-	remFS, err := remfs.New()
+	// Create CLI instance
+	cliHandler, err := cli.New()
 	if err != nil {
-		fmt.Printf("Error creating rem filesystem: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create queue manager
-	qm, err := queue.NewQueueManager(remFS)
-	if err != nil {
-		fmt.Printf("Error creating queue manager: %v\n", err)
-		os.Exit(1)
-	}
+	// Execute the command
+	if err := cliHandler.Execute(&args); err != nil {
+		fmt.Printf("Error: %v\n", err)
 
-	// Get items from queue
-	queueItems, err := qm.List()
-	if err != nil {
-		fmt.Printf("Error listing queue items: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Convert queue items to TUI items
-	var tuiItems []*tui.QueueItem
-	for _, qItem := range queueItems {
-		// Get content reader
-		contentReader, err := qItem.GetContentReader(qm.FileSystem())
-		if err != nil {
-			fmt.Printf("Error getting content reader: %v\n", err)
-			continue
+		// If it's an argument validation error, show usage
+		if args.Store != nil || args.Get != nil {
+			fmt.Println()
+			parser.WriteUsage(os.Stderr)
 		}
-
-		tuiItem := &tui.QueueItem{
-			Content: contentReader,
-			Preview: qItem.Preview,
-			ViewPos: 0,
-		}
-		tuiItems = append(tuiItems, tuiItem)
-	}
-
-	// If no items in queue, show a helpful message
-	if len(tuiItems) == 0 {
-		fmt.Println("📭 Queue is empty!")
-		fmt.Println()
-		fmt.Println("To add items to the queue:")
-		fmt.Printf("  echo \"Hello World\" | rem store\n")
-		fmt.Printf("  rem store filename.txt\n")
-		fmt.Printf("  rem store -c  # from clipboard\n")
-		fmt.Println()
-		fmt.Println("For now, run the demo to add some content:")
-		fmt.Printf("  go run ./cmd/demo/\n")
-		return
-	}
-
-	model := tui.NewModel(tuiItems)
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error running program: %v", err)
 		os.Exit(1)
 	}
 }
