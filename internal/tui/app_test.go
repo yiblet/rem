@@ -424,15 +424,171 @@ func TestAppModel_JumpCommands(t *testing.T) {
 
 	// Test jump command through the update mechanism
 	// Calculate max scroll for bounds checking
-	maxScroll := getMaxScroll(app.RightPane, content)
+	content.UpdateWrappedLines(app.RightWidth - 6)
+	availableHeight := app.RightPane.Height - 6
+	maxScroll := 0
+	if len(content.Lines) > availableHeight {
+		maxScroll = len(content.Lines) - availableHeight
+	}
 
-	// Test "10j" jump command
-	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10j")})
+	// Test "10j" jump command - send as separate key events
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
 	updatedApp := newModel.(*AppModel)
+
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("0")})
+	updatedApp = newModel.(*AppModel)
+
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	updatedApp = newModel.(*AppModel)
 
 	// Should move down by 10 lines (or to max scroll if less than 10)
 	expectedPos := min(10, maxScroll)
 	if updatedApp.RightPane.ViewPos != expectedPos {
 		t.Errorf("Expected view position to be %d after '10j', got %d", expectedPos, updatedApp.RightPane.ViewPos)
+	}
+}
+
+// TestAppModel_PaneBorderAlignment tests that left and right panes render the same number of lines
+// to ensure borders align properly, preventing the scrolling visual bug where right pane borders
+// appear on different lines than left pane borders.
+func TestAppModel_PaneBorderAlignment(t *testing.T) {
+	testCases := []struct {
+		name        string
+		contentSize int
+		height      int
+		scrollPos   int
+	}{
+		{
+			name:        "short content no scroll",
+			contentSize: 5,
+			height:      15,
+			scrollPos:   0,
+		},
+		{
+			name:        "long content no scroll",
+			contentSize: 30,
+			height:      15,
+			scrollPos:   0,
+		},
+		{
+			name:        "long content with scroll",
+			contentSize: 30,
+			height:      15,
+			scrollPos:   5,
+		},
+		{
+			name:        "very short window",
+			contentSize: 20,
+			height:      10,
+			scrollPos:   3,
+		},
+		{
+			name:        "tall window",
+			contentSize: 15,
+			height:      25,
+			scrollPos:   0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create content with specific number of lines
+			contentLines := make([]string, tc.contentSize)
+			for i := 0; i < tc.contentSize; i++ {
+				contentLines[i] = fmt.Sprintf("Line %d with some content to test wrapping behavior", i+1)
+			}
+			contentStr := strings.Join(contentLines, "\n")
+
+			content := &StackItem{
+				Content: NewStringReadSeekCloser(contentStr),
+				Preview: "Test content for border alignment",
+			}
+			items := []*StackItem{content}
+			app := NewAppModel(items)
+
+			// Set specific dimensions
+			app.Width = 120
+			app.Height = tc.height
+			app.LeftWidth = 25
+			app.RightWidth = 90
+
+			// Update sub-models with dimensions
+			app.LeftPane.Update(ResizeLeftPaneMsg{Width: app.LeftWidth, Height: app.Height})
+			app.RightPane.Update(ResizeRightPaneMsg{Width: app.RightWidth, Height: app.Height})
+			app.RightPane.Update(UpdateContentMsg{})
+
+			// Set scroll position
+			content.UpdateWrappedLines(app.RightWidth - 6)
+			availableHeight := app.RightPane.Height - 6
+			maxScroll := 0
+			if len(content.Lines) > availableHeight {
+				maxScroll = len(content.Lines) - availableHeight
+			}
+			if tc.scrollPos <= maxScroll {
+				app.RightPane.ViewPos = tc.scrollPos
+			}
+
+			// Render both panes separately
+			leftPaneView, err := LeftPaneView(app.LeftPane, app.Items, app.ActivePane == LeftPane)
+			if err != nil {
+				t.Fatalf("Error rendering left pane: %v", err)
+			}
+
+			rightPaneView, err := RightPaneView(app.RightPane, content, app.Search, app.ActivePane == RightPane, 0)
+			if err != nil {
+				t.Fatalf("Error rendering right pane: %v", err)
+			}
+
+			// Split into lines and count
+			leftLines := strings.Split(leftPaneView, "\n")
+			rightLines := strings.Split(rightPaneView, "\n")
+
+			// Critical test: both panes should render the same number of lines
+			if len(leftLines) != len(rightLines) {
+				t.Errorf("Border alignment issue: left pane has %d lines, right pane has %d lines. "+
+					"This will cause border misalignment in the TUI. "+
+					"Content size: %d, Height: %d, Scroll: %d",
+					len(leftLines), len(rightLines), tc.contentSize, tc.height, tc.scrollPos)
+			}
+
+			// Verify that the complete AppView renders properly
+			appView, err := AppView(app)
+			if err != nil {
+				t.Fatalf("Error rendering app view: %v", err)
+			}
+
+			appLines := strings.Split(appView, "\n")
+
+			// Find lines with border characters to verify alignment
+			var borderLines []string
+			for _, line := range appLines {
+				if strings.Contains(line, "│") {
+					borderLines = append(borderLines, line)
+				}
+			}
+
+			// Check that border characters appear in expected positions consistently
+			if len(borderLines) > 0 {
+				// All border lines should have consistent structure
+				firstBorderLine := borderLines[0]
+				leftBorderPos := strings.Index(firstBorderLine, "│")
+
+				for i, borderLine := range borderLines {
+					currentLeftBorderPos := strings.Index(borderLine, "│")
+					if currentLeftBorderPos != leftBorderPos {
+						t.Errorf("Inconsistent border alignment at line %d: expected left border at pos %d, got %d",
+							i, leftBorderPos, currentLeftBorderPos)
+					}
+				}
+			}
+
+			// Verify no empty trailing lines in pane views (which could cause alignment issues)
+			if len(leftLines) > 0 && strings.TrimSpace(leftLines[len(leftLines)-1]) == "" {
+				t.Error("Left pane view has trailing empty line which could cause alignment issues")
+			}
+			if len(rightLines) > 0 && strings.TrimSpace(rightLines[len(rightLines)-1]) == "" {
+				t.Error("Right pane view has trailing empty line which could cause alignment issues")
+			}
+		})
 	}
 }

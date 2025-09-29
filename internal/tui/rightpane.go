@@ -191,7 +191,8 @@ func RightPaneView(model RightPaneModel, content *StackItem, searchModel SearchM
 		}
 	}
 
-	return style.Render(contentBuilder.String()), nil
+	contentStr := strings.TrimSuffix(contentBuilder.String(), "\n")
+	return style.Render(contentStr), nil
 }
 
 // highlightSearchMatches highlights search matches in a line (pure function)

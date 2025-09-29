@@ -163,5 +163,6 @@ func LeftPaneView(model LeftPaneModel, items []*StackItem, focused bool) (string
 		content.WriteString(line + "\n")
 	}
 
-	return style.Render(content.String()), nil
+	contentStr := strings.TrimSuffix(content.String(), "\n")
+	return style.Render(contentStr), nil
 }
