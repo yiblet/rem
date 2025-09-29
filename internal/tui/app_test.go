@@ -161,7 +161,7 @@ func TestAppModel_RightPaneScrolling(t *testing.T) {
 	// Switch to right pane
 	app.ActivePane = RightPane
 	// Initialize content and ensure lines are calculated
-	content.UpdateWrappedLines(app.RightWidth - 6)
+	content.UpdateWrappedLines(app.RightWidth-6, app.RightPane.Height-6)
 	app.Init()
 
 	// Should start at position 0
@@ -224,7 +224,7 @@ func TestAppModel_SearchMode(t *testing.T) {
 	}
 
 	// Ensure content lines are calculated for search
-	content.UpdateWrappedLines(app.RightWidth - 6)
+	content.UpdateWrappedLines(app.RightWidth-6, app.RightPane.Height-6)
 
 	// Execute search with enter
 	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -253,7 +253,7 @@ func TestAppModel_SearchNavigation(t *testing.T) {
 
 	// Set up search results manually
 	app.ActivePane = RightPane
-	content.UpdateWrappedLines(app.RightWidth - 6) // Ensure lines are calculated
+	content.UpdateWrappedLines(app.RightWidth-6, app.RightPane.Height-6) // Ensure lines are calculated
 	app.Init()
 
 	// Set up search pattern and perform search
@@ -443,8 +443,8 @@ func TestAppModel_JumpCommands(t *testing.T) {
 
 	// Test jump command through the update mechanism
 	// Calculate max scroll for bounds checking
-	content.UpdateWrappedLines(app.RightWidth - 6)
 	availableHeight := app.RightPane.Height - 6
+	content.UpdateWrappedLines(app.RightWidth-6, availableHeight)
 	maxScroll := 0
 	if len(content.Lines) > availableHeight {
 		maxScroll = len(content.Lines) - availableHeight
@@ -537,8 +537,8 @@ func TestAppModel_PaneBorderAlignment(t *testing.T) {
 			app.RightPane.Update(UpdateContentMsg{})
 
 			// Set scroll position
-			content.UpdateWrappedLines(app.RightWidth - 6)
 			availableHeight := app.RightPane.Height - 6
+			content.UpdateWrappedLines(app.RightWidth-6, availableHeight)
 			maxScroll := 0
 			if len(content.Lines) > availableHeight {
 				maxScroll = len(content.Lines) - availableHeight

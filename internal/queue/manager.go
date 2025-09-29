@@ -4,15 +4,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	MaxStackSize = 20
-	ContentDir   = "content"
+	DefaultMaxStackSize = 255
+	// ContentDir removed - remfs now points directly to the history directory
 )
 
 // FileSystem interface for dependency injection and testability
@@ -26,7 +25,8 @@ type FileSystem interface {
 
 // StackManager manages the persistent LIFO stack
 type StackManager struct {
-	fs FileSystem
+	fs           FileSystem
+	historyLimit int
 }
 
 // StackItem represents a single item in the stack
@@ -38,12 +38,21 @@ type StackItem struct {
 
 // NewStackManager creates a new stack manager with the provided filesystem
 func NewStackManager(filesystem FileSystem) (*StackManager, error) {
-	qm := &StackManager{fs: filesystem}
+	return NewStackManagerWithConfig(filesystem, DefaultMaxStackSize)
+}
 
-	// Ensure content directory exists
-	if err := qm.fs.MkdirAll(ContentDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create content directory: %w", err)
+// NewStackManagerWithConfig creates a new stack manager with the provided filesystem and history limit
+func NewStackManagerWithConfig(filesystem FileSystem, historyLimit int) (*StackManager, error) {
+	if historyLimit <= 0 {
+		historyLimit = DefaultMaxStackSize
 	}
+
+	qm := &StackManager{
+		fs:           filesystem,
+		historyLimit: historyLimit,
+	}
+
+	// The remfs already points to the history directory, no subdirectory needed
 
 	return qm, nil
 }
@@ -57,7 +66,7 @@ func (qm *StackManager) FileSystem() FileSystem {
 func (qm *StackManager) Push(content io.Reader) (*StackItem, error) {
 	now := time.Now()
 	filename := now.Format("2006-01-02T15-04-05.000000Z07-00") + ".txt"
-	filePath := filepath.Join(ContentDir, filename)
+	filePath := filename
 
 	// Read all content into memory first
 	data, err := io.ReadAll(content)
@@ -120,9 +129,9 @@ func (qm *StackManager) generatePreview(data []byte) string {
 	return previewStr
 }
 
-// cleanupOldFiles removes the oldest files if stack exceeds MaxStackSize
+// cleanupOldFiles removes the oldest files if stack exceeds configured history limit
 func (qm *StackManager) cleanupOldFiles() error {
-	files, err := qm.fs.ReadDir(ContentDir)
+	files, err := qm.fs.ReadDir(".")
 	if err != nil {
 		return fmt.Errorf("failed to read content directory: %w", err)
 	}
@@ -135,8 +144,8 @@ func (qm *StackManager) cleanupOldFiles() error {
 		}
 	}
 
-	// If we have MaxStackSize or fewer files, no cleanup needed
-	if len(contentFiles) <= MaxStackSize {
+	// If we have historyLimit or fewer files, no cleanup needed
+	if len(contentFiles) <= qm.historyLimit {
 		return nil
 	}
 
@@ -145,10 +154,10 @@ func (qm *StackManager) cleanupOldFiles() error {
 		return contentFiles[i].Name() < contentFiles[j].Name()
 	})
 
-	// Remove oldest files to get back to MaxStackSize
-	filesToRemove := len(contentFiles) - MaxStackSize
+	// Remove oldest files to get back to historyLimit
+	filesToRemove := len(contentFiles) - qm.historyLimit
 	for i := 0; i < filesToRemove; i++ {
-		filePath := filepath.Join(ContentDir, contentFiles[i].Name())
+		filePath := contentFiles[i].Name()
 		if err := qm.fs.Remove(filePath); err != nil {
 			return fmt.Errorf("failed to remove old file %s: %w", filePath, err)
 		}
@@ -159,7 +168,7 @@ func (qm *StackManager) cleanupOldFiles() error {
 
 // List returns all items in the stack, sorted by timestamp (newest first - LIFO order)
 func (qm *StackManager) List() ([]*StackItem, error) {
-	files, err := qm.fs.ReadDir(ContentDir)
+	files, err := qm.fs.ReadDir(".")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read content directory: %w", err)
 	}
@@ -177,7 +186,7 @@ func (qm *StackManager) List() ([]*StackItem, error) {
 			continue // Skip files with invalid timestamp format
 		}
 
-		filePath := filepath.Join(ContentDir, file.Name())
+		filePath := file.Name()
 		preview, err := qm.generatePreviewFromFile(filePath)
 		if err != nil {
 			preview = filename // Fallback to filename
@@ -297,6 +306,11 @@ type QueueItem = StackItem
 // Legacy function aliases for backward compatibility
 func NewQueueManager(filesystem FileSystem) (*StackManager, error) {
 	return NewStackManager(filesystem)
+}
+
+// GetHistoryLimit returns the configured history limit
+func (qm *StackManager) GetHistoryLimit() int {
+	return qm.historyLimit
 }
 
 // Legacy method aliases for backward compatibility

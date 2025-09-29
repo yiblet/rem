@@ -14,13 +14,13 @@ func main() {
 	parser := arg.MustParse(&args)
 
 	// If no subcommand provided, show help or launch TUI
-	if args.Store == nil && args.Get == nil {
+	if args.Store == nil && args.Get == nil && args.Config == nil {
 		// Default behavior: launch TUI (same as 'rem get')
 		args.Get = &cli.GetCmd{}
 	}
 
-	// Create CLI instance
-	cliHandler, err := cli.New()
+	// Create CLI instance with args for history location support
+	cliHandler, err := cli.NewWithArgs(&args)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -31,7 +31,7 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 
 		// If it's an argument validation error, show usage
-		if args.Store != nil || args.Get != nil {
+		if args.Store != nil || args.Get != nil || args.Config != nil {
 			fmt.Println()
 			parser.WriteUsage(os.Stderr)
 		}

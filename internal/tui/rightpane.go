@@ -151,23 +151,24 @@ func RightPaneView(model RightPaneModel, content *StackItem, searchModel SearchM
 			title = "● " + title // Active indicator
 		}
 
-		// Ensure lines are calculated
-		if len(content.Lines) == 0 {
-			content.UpdateWrappedLines(model.Width - 6)
-		}
+		// Calculate available height once
+		availableHeight := model.Height - 6 // Account for borders and headers
+
+		// Ensure lines are wrapped for current width
+		// UpdateWrappedLines is smart - it only recalculates if width changed
+		content.UpdateWrappedLines(model.Width-6, availableHeight)
 
 		maxScroll := getMaxScroll(model, content)
 		if len(content.Lines) > 0 && maxScroll > 0 {
 			// Add scroll position indicator
 			totalLines := len(content.Lines)
 			topLine := model.ViewPos + 1
-			bottomLine := min(model.ViewPos+(model.Height-6), totalLines)
+			bottomLine := min(model.ViewPos+availableHeight, totalLines)
 			title += fmt.Sprintf(" (%d-%d/%d)", topLine, bottomLine, totalLines)
 		}
 		contentBuilder.WriteString(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n")
 
 		// Show the visible portion based on view position
-		availableHeight := model.Height - 6 // Account for borders and headers
 		startLine := model.ViewPos
 		endLine := min(startLine+availableHeight, len(content.Lines))
 

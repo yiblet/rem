@@ -1,347 +1,257 @@
-# TUI Elm Architecture Refactoring Plan
+# History Management Features Implementation Plan
 
 ## Current Project Status
-**Feature**: Convert TUI to Elm Architecture
+**Feature**: History Management Enhancements
 **Phase**: Planning and Design
-**Goal**: Refactor the existing TUI from a single-file monolithic structure to a clean Elm architecture with explicit Model/Msg/View patterns and sub-components.
+**Goal**: Implement comprehensive history management features including configurable limits, environment variables, location customization, and advanced operations.
 
-## Current State Analysis
+## History-Related Features from TODO.md
 
-### Existing Structure
-- **Single File**: All TUI code in `internal/tui/viewer.go` (~762 lines)
-- **Monolithic Model**: Single `Model` struct containing all application state
-- **Ad-hoc Messages**: Uses Bubble Tea's generic `tea.Msg` types with type switches
-- **Scattered State**: Application state split between `Model` and `StackItem` structs
-- **Helper-based Updates**: Update logic split into helper methods that mutate state
+### Core History Configuration
+- [ ] Make the history length limit configurable
+  - [ ] Allow via TUI to change the configs
+  - [ ] Allow via CLI to change the configs
+- [ ] Add a clear command to clear rem history
+- [ ] Add a REM_HISTORY environment variable for custom location configuration
+- [ ] Change history location from `~/.config/rem/content/` to `~/.config/rem/history/`
+- [ ] Allow rem to configure its history via a CLI `--history` command
 
-### Current State Issues
-1. **Poor Separation of Concerns**: UI logic, business logic, and state management are mixed
-2. **Difficult Testing**: Large functions make unit testing complex
-3. **Hard to Extend**: Adding new features requires modifying multiple large functions
-4. **No Component Reusability**: UI elements are tightly coupled to main model
+### Advanced History Operations
+- [ ] Allow via TUI the ability to delete individual items from history
+- [ ] Add CLI-based search functionality - finds the first content in history matching a regex
+  - Example: `rem search 'hello.*world'` returns the first file in history with a line matching the pattern
 
-## Target Elm Architecture Design
+### Quality of Life Improvements
+- [ ] Detect and don't show binary files in the preview
+- [ ] Allow pager-style commands on the left sidebar in the TUI
 
-### Component-Specific Message Types
-Each component handles only messages relevant to its domain:
+## Feature Priority and Implementation Order
 
-#### App-Level Messages (AppMsg)
+### Phase 1: History Location and Environment Configuration [COMPLETED]
+**Priority**: High - Foundation for all other features
+**Complexity**: Low-Medium
+**Dependencies**: None
+
+#### 1.1 REM_HISTORY Environment Variable
+- Add support for `REM_HISTORY` environment variable
+- Default to `~/.config/rem/history/` if not set
+- Update `remfs` package to use configurable base path
+- Maintain backward compatibility with existing `~/.config/rem/content/` locations
+
+#### 1.2 Directory Migration
+- Implement migration logic from `content/` to `history/`
+- Add migration command or automatic detection
+- Preserve existing user data during transition
+
+#### 1.3 CLI History Flag
+- Add `--history` flag to CLI commands
+- Override environment variable when specified
+- Update all CLI commands to respect history location setting
+
+**Phase 1 Testing:**
+- **Unit Tests**: Environment variable parsing and precedence logic in `remfs` package ✓
+- **Unit Tests**: Directory migration functions with mock filesystem scenarios ✓
+- **Integration Tests**: CLI commands with `--history` flag using temporary directories ✓
+- **Integration Tests**: Backward compatibility with existing `content/` directory structure ✓
+- **Unit Tests**: Error handling for invalid paths, missing permissions, and filesystem failures ✓
+
+**Phase 1 Implementation Summary:**
+- ✅ **REM_HISTORY Environment Variable**: Added support via go-arg's `env:` tag in CLI args
+- ✅ **CLI --history Flag**: Added global flag that overrides environment variable and defaults
+- ✅ **Directory Migration**: Automatic migration from `~/.config/rem/content/` to `~/.config/rem/history/`
+- ✅ **NewWithHistoryPath Function**: Enhanced remfs package to support custom history paths
+- ✅ **Precedence Logic**: CLI flag > REM_HISTORY env var > default `~/.config/rem/history/`
+- ✅ **Backward Compatibility**: Safe migration with conflict detection and marker files
+- ✅ **Test Coverage**: Comprehensive unit and integration tests for all new functionality
+
+### Phase 2: Configuration System and CLI Management [COMPLETED]
+**Priority**: High - Core functionality improvement
+**Complexity**: Medium
+**Dependencies**: Phase 1 complete
+
+#### 2.1 Configuration System
+- Create configuration file structure (`~/.config/rem/config.yaml` or similar)
+- Define configuration schema with history limit setting
+- Default to current 20-item limit for backward compatibility
+
+#### 2.2 CLI Configuration
+- Add `rem config` command with subcommands:
+  - `rem config get history-limit`
+  - `rem config set history-limit <number>`
+  - `rem config list` (show all settings)
+
+**Phase 2 Testing:**
+- **Unit Tests**: Configuration file parsing, validation, and YAML marshaling/unmarshaling ✓
+- **Integration Tests**: CLI config commands (`get`, `set`, `list`) with temporary config files ✓
+- **Integration Tests**: History limit enforcement and auto-cleanup with mock stack data ✓
+- **Unit Tests**: Configuration persistence and file I/O operations ✓
+
+**Phase 2 Implementation Summary:**
+- ✅ **Configuration System**: Created `internal/config` package with YAML-based config management
+- ✅ **CLI Commands**: Added `rem config get/set/list` subcommands with validation
+- ✅ **Stack Manager Integration**: Modified StackManager to use configurable history limits
+- ✅ **Backward Compatibility**: Maintained default behavior with `DefaultMaxStackSize = 20`
+- ✅ **Comprehensive Testing**: Unit tests for config package and integration tests for CLI commands
+- ✅ **Configuration Schema**: Supports `history-limit`, `show-binary`, and `history-location` settings
+
+### Phase 3: History Management Operations [TODO]
+**Priority**: Medium - User convenience features
+**Complexity**: Medium-High
+**Dependencies**: Phase 2 complete
+
+#### 3.1 Clear Command
+- Add `rem clear` CLI command
+- Confirmation prompt for safety
+- Option for `--force` to skip confirmation
+- Preserve configuration files
+
+#### 3.2 Individual Item Deletion (TUI)
+- Add keybinding for deletion (e.g., 'd' or 'Delete')
+- Confirmation dialog for safety
+- Update stack indices after deletion
+- Refresh display immediately
+
+#### 3.3 Search Functionality
+- Add `rem search <pattern>` CLI command
+- Support for regex patterns
+- Return first matching item's content
+- Option to return item index instead of content
+- Integration with existing stream-based content model
+
+**Phase 3 Testing:**
+- **Integration Tests**: `rem clear` command with mock filesystem and confirmation logic
+- **Unit Tests**: TUI deletion component state management and stack reordering logic
+- **Unit Tests**: Search regex compilation, pattern matching, and result formatting
+- **Integration Tests**: Search functionality with generated test data and various file sizes
+- **Unit Tests**: Error handling for malformed regex patterns and empty result sets
+
+### Phase 4: TUI Configuration Interface [TODO]
+**Priority**: High - User experience improvement
+**Complexity**: Medium
+**Dependencies**: Phase 2 and 3 complete
+
+#### 4.1 TUI Configuration Screen
+- Add configuration screen accessible via keybinding (e.g., 'c')
+- Allow real-time adjustment of history limit
+- Show current usage vs. limit
+- Visual feedback for configuration changes
+
+**Phase 4 Testing:**
+- **Unit Tests**: TUI configuration component model updates and view rendering
+- **Unit Tests**: Configuration screen key handling and state management
+- **Integration Tests**: Configuration changes persist to file and affect stack behavior
+- **Unit Tests**: Real-time validation and error display for invalid values
+
+### Phase 5: Quality of Life Enhancements [TODO]
+**Priority**: Low-Medium - Polish and user experience
+**Complexity**: Low-Medium
+**Dependencies**: Core features complete
+
+#### 5.1 Binary File Detection
+- Implement binary file detection in preview system
+- Add fallback display for binary files (filename, size, type)
+- Configurable binary detection sensitivity
+
+#### 5.2 Enhanced TUI Navigation
+- Add pager-style commands to left pane:
+  - 'f'/'F' - page forward/backward
+  - '/'/'?' - search within item list
+  - 'gg'/'G' - go to top/bottom
+- Consistent keybinding scheme across panes
+
+**Phase 5 Testing:**
+- **Unit Tests**: Binary file detection algorithm with generated binary/text test data
+- **Unit Tests**: Binary file metadata extraction and fallback display formatting
+- **Unit Tests**: TUI navigation component key handling and state transitions
+- **Integration Tests**: Pager-style commands with mock TUI models and view rendering
+- **Integration Tests**: Performance benchmarks with mixed content types using generated data
+
+## Technical Implementation Details
+
+### Configuration Architecture
 ```go
-type AppMsg interface {
-    isAppMsg()
-}
-
-type WindowResizeMsg struct{ Width, Height int }
-type FocusChangeMsg struct{ Pane PaneType }
-type QuitMsg struct{}
-type KeyPressMsg struct{ Key string } // Raw key that needs routing
-```
-
-#### Left Pane Messages (LeftPaneMsg)
-```go
-type LeftPaneMsg interface {
-    isLeftPaneMsg()
-}
-
-type NavigateUpMsg struct{}
-type NavigateDownMsg struct{}
-type SelectItemMsg struct{ Index int }
-type ResizeLeftPaneMsg struct{ Width, Height int }
-```
-
-#### Right Pane Messages (RightPaneMsg)
-```go
-type RightPaneMsg interface {
-    isRightPaneMsg()
-}
-
-type ScrollUpMsg struct{}
-type ScrollDownMsg struct{}
-type ScrollToTopMsg struct{}
-type ScrollToBottomMsg struct{}
-type PageUpMsg struct{}
-type PageDownMsg struct{}
-type JumpMsg struct{ Direction string; Lines int }
-type ResizeRightPaneMsg struct{ Width, Height int }
-type UpdateContentMsg struct{ Item *StackItem }
-```
-
-#### Search Messages (SearchMsg)
-```go
-type SearchMsg interface {
-    isSearchMsg()
-}
-
-type StartSearchMsg struct{}
-type UpdateSearchInputMsg struct{ Input string }
-type ExecuteSearchMsg struct{}
-type CancelSearchMsg struct{}
-type NextMatchMsg struct{}
-type PrevMatchMsg struct{}
-type ClearSearchMsg struct{}
-```
-
-### Model Structure
-Break down the monolithic model into focused sub-models:
-
-```go
-// Top-level application model
-type AppModel struct {
-    WindowSize    WindowSize
-    ActivePane    PaneType
-    LeftPane      LeftPaneModel
-    RightPane     RightPaneModel
-    Search        SearchModel
-    Items         []*StackItem
-}
-
-// Left pane (item list) model
-type LeftPaneModel struct {
-    Cursor      int
-    Selected    int
-    Width       int
-    Height      int
-}
-
-// Right pane (content viewer) model
-type RightPaneModel struct {
-    Width       int
-    Height      int
-    ViewPos     int
-    Content     *StackItem
-}
-
-// Search functionality model
-type SearchModel struct {
-    Active      bool
-    Input       string
-    Pattern     string
-    Error       string
-    Matches     []int
-    CurrentMatch int
+type Config struct {
+    HistoryLimit    int    `yaml:"history_limit"`
+    HistoryLocation string `yaml:"history_location,omitempty"`
+    ShowBinary      bool   `yaml:"show_binary"`
 }
 ```
 
-### Generic Component Interface
-Each component implements a generic interface with its specific message type:
+### Environment Variable Precedence
+1. CLI `--history` flag (highest)
+2. `REM_HISTORY` environment variable
+3. Configuration file setting
+4. Default `~/.config/rem/history/` (lowest)
 
-```go
-// Generic component interface
-type Component[M any] interface {
-    View() string
-    Update(M) error
-}
-
-// Component implementations
-type LeftPaneComponent struct {
-    Model LeftPaneModel
-    Items []*StackItem
-}
-
-type RightPaneComponent struct {
-    Model RightPaneModel
-}
-
-type SearchComponent struct {
-    Model SearchModel
-}
-
-// App handles message routing and orchestration
-type AppComponent struct {
-    Model      AppModel
-    LeftPane   LeftPaneComponent
-    RightPane  RightPaneComponent
-    Search     SearchComponent
-}
-
-// AppComponent routes messages to appropriate sub-components
-func (a *AppComponent) Update(msg tea.Msg) error {
-    // Parse tea.Msg into component-specific messages
-    // Route to appropriate component
-}
+### Directory Structure Changes
+```
+~/.config/rem/
+├── history/                 # New default (was content/)
+│   ├── 2025-09-28T10-15-30.123456-07-00.txt
+│   └── ...
+├── config.yaml             # New configuration file
+└── .migration_complete     # Migration marker
 ```
 
-## Sub-Component Breakdown
-
-### 1. Core Components
-- **`AppComponent`**: Top-level orchestrator, handles window events and focus management
-- **`LeftPaneComponent`**: Manages item list navigation and selection
-- **`RightPaneComponent`**: Manages content viewing, scrolling, and display
-- **`SearchComponent`**: Manages search input, execution, and match navigation
-
-### 2. File Structure
-Reorganize code into focused files:
-
-```
-internal/tui/
-├── app.go              # Main AppModel, Update, and View
-├── messages.go         # All message type definitions
-├── leftpane.go         # LeftPaneModel and related functions
-├── rightpane.go        # RightPaneModel and related functions
-├── search.go           # SearchModel and search functionality
-├── components.go       # Shared component interfaces and utilities
-├── styles.go           # Lipgloss styles and theming
-└── utils.go            # Utility functions (wrapText, min, max, etc.)
-```
-
-### 3. Component Responsibilities
-
-#### AppComponent
-- Window size management
-- Focus management between panes
-- Message routing to sub-components
-- Overall layout orchestration
-
-#### LeftPaneComponent
-- Item navigation (up/down/select)
-- Visual selection highlighting
-- Item preview rendering
-- Focus visual indicators
-
-#### RightPaneComponent
-- Content scrolling (line-by-line, page, jump)
-- Content rendering with line wrapping
-- Search result highlighting
-- Scroll position indicators
-
-#### SearchComponent
-- Search input handling
-- Pattern compilation and validation
-- Match finding and navigation
-- Search result visualization
-
-## Incremental Implementation Plan
-
-### Phase 1: Search Component (Standalone)
-**Why First**: Self-contained, minimal dependencies, clear boundaries
-**Deliverables**:
-- `search.go` - SearchModel, SearchMsg types, and SearchComponent
-- `search_test.go` - Unit tests for search functionality
-- Test integration with existing StackItem search methods
-
-**Implementation Steps**:
-1. Create SearchMsg interface and message types
-2. Create SearchModel struct
-3. Implement SearchComponent with Update/View methods
-4. Write comprehensive unit tests
-5. Run `go test ./internal/tui` to ensure no regressions
-
-### Phase 2: Left Pane Component
-**Why Second**: Simple navigation logic, depends only on item list
-**Deliverables**:
-- `leftpane.go` - LeftPaneModel, LeftPaneMsg types, and LeftPaneComponent
-- `leftpane_test.go` - Navigation and selection tests
-- Integration with StackItem list
-
-**Implementation Steps**:
-1. Create LeftPaneMsg interface and message types
-2. Create LeftPaneModel struct
-3. Implement LeftPaneComponent with Update/View methods
-4. Write unit tests for navigation boundaries and selection
-5. Run `go test ./internal/tui` to ensure functionality
-
-### Phase 3: Right Pane Component
-**Why Third**: More complex scrolling logic, depends on SearchComponent
-**Deliverables**:
-- `rightpane.go` - RightPaneModel, RightPaneMsg types, and RightPaneComponent
-- `rightpane_test.go` - Scrolling, content display, and search integration tests
-- Integration with SearchComponent for highlighting
-
-**Implementation Steps**:
-1. Create RightPaneMsg interface and message types
-2. Create RightPaneModel struct
-3. Implement RightPaneComponent with Update/View methods
-4. Integrate with SearchComponent for match highlighting
-5. Write tests for scrolling boundaries and content rendering
-6. Run `go test ./internal/tui` to verify all components work
-
-### Phase 4: App Component Integration
-**Why Last**: Orchestrates all sub-components, message routing complexity
-**Deliverables**:
-- `app.go` - AppModel, AppMsg types, AppComponent, and message routing
-- `app_test.go` - Integration tests for component interactions
-- Updated main `viewer.go` to use new AppComponent
-
-**Implementation Steps**:
-1. Create AppMsg interface and routing message types
-2. Create AppComponent that wraps all sub-components
-3. Implement message routing from `tea.Msg` to component-specific messages
-4. Update main Update/View methods to delegate to AppComponent
-5. Write integration tests for focus changes and message routing
-6. Run full test suite to ensure complete functionality
-
-### Phase 5: Legacy Compatibility & Cleanup
-**Deliverables**:
-- Maintain existing public API for backward compatibility
-- Remove old monolithic code from `viewer.go`
-- Update package documentation and examples
-
-**Implementation Steps**:
-1. Ensure `NewModel()` and existing APIs still work
-2. Remove unused code from `viewer.go`
-3. Update imports and clean up file structure
-4. Run full test suite including existing integration tests
-5. Performance verification - no regressions
+### Search Implementation
+- Leverage existing `StackItem.Search()` method
+- Implement regex compilation and caching
+- Stream-based searching for memory efficiency
+- Return structured results with match context
 
 ## Testing Strategy
 
-### Unit Tests
-- **Message Handling**: Test each update function with specific message types
-- **Model State**: Test model initialization, validation, and state consistency
-- **View Rendering**: Test component view functions with different model states
-- **Search Logic**: Test search pattern compilation, matching, and navigation
-
-### Integration Tests
-- **Pane Interactions**: Test focus changes and message routing between panes
-- **Search Integration**: Test end-to-end search workflow across components
-- **Window Resize**: Test layout recalculation and content rewrapping
-
-### Property-Based Tests
-- **Navigation Bounds**: Test navigation doesn't exceed item list boundaries
-- **Scroll Bounds**: Test scrolling doesn't exceed content boundaries
-- **Search Consistency**: Test search results are consistent across operations
+Each phase must include high-level test descriptions to ensure correctness of the implementation. Tests should be specified at the phase level and implemented alongside the features.
 
 ## Success Criteria
 
 ### Functional Requirements
-- [ ] All existing TUI functionality works identically
-- [ ] No regression in user experience or performance
-- [ ] All keyboard shortcuts and interactions preserved
+- [ ] Users can configure history limit via CLI and TUI
+- [ ] REM_HISTORY environment variable works correctly
+- [ ] Migration from old location is seamless
+- [ ] Clear command safely removes all history
+- [ ] Individual item deletion works in TUI
+- [ ] Search command finds and returns correct matches
+- [ ] Binary files are handled appropriately
 
-### Code Quality Requirements
-- [ ] Explicit message types for all user actions
-- [ ] Pure update functions (no in-place mutation)
-- [ ] Component-based view architecture
-- [ ] <100 lines per file (focused responsibility)
-- [ ] >90% test coverage on business logic
+### Compatibility Requirements
+- [ ] Backward compatibility with existing installations
+- [ ] No breaking changes to existing CLI interface
+- [ ] Existing TUI keybindings remain unchanged
+- [ ] Configuration is optional (sensible defaults)
 
-### Maintainability Requirements
-- [ ] Easy to add new features (new message types, components)
-- [ ] Clear separation between UI, business logic, and state
-- [ ] Self-documenting code structure and interfaces
-- [ ] Consistent error handling and validation patterns
-
-## Next Steps
-
-1. **Start Phase 1**: Begin with message type definitions in `messages.go`
-2. **Create Branch**: Create feature branch `feat/elm-architecture-refactor`
-3. **Incremental Implementation**: Implement each phase with working code at every step
-4. **Continuous Testing**: Run existing tests after each phase to ensure no regressions
-5. **Documentation**: Update ARCHITECTURE.md as components are implemented
+### Quality Requirements
+- [ ] All new functionality has comprehensive tests
+- [ ] Error handling for invalid configurations
+- [ ] Clear user feedback for all operations
+- [ ] Performance remains acceptable with larger history limits
 
 ## Risk Mitigation
 
-### Technical Risks
-- **Breaking Changes**: Maintain backward compatibility through incremental refactoring
-- **Performance Impact**: Profile rendering performance before and after changes
-- **Test Coverage**: Ensure existing tests pass throughout refactoring
+### Data Safety
+- Always backup existing data during migration
+- Implement transaction-like operations for critical changes
+- Extensive testing with various data scenarios
 
-### Timeline Risks
-- **Scope Creep**: Focus strictly on refactoring, not new features
-- **Complexity**: Break work into small, reviewable chunks
-- **Integration**: Test component interactions early and often
+### Backward Compatibility
+- Support both old and new directory structures during transition
+- Graceful fallback for missing configuration
+- Clear migration path documentation
+
+### Performance
+- Efficient search algorithms for large history
+- Lazy loading for TUI with many items
+- Memory-conscious operations for large files
+
+## Next Steps
+
+1. **Start Phase 1**: Begin with environment variable support and directory migration
+2. **Create Feature Branch**: `feat/history-management`
+3. **Incremental Implementation**: Each phase should be fully functional
+4. **Continuous Testing**: Maintain test coverage throughout
+5. **Documentation**: Update ARCHITECTURE.md with new configuration system
 
 ---
 
-**Last Updated**: 2025-09-28
-**Status**: Planning Complete, Ready for Implementation
+**Last Updated**: 2025-09-29
+**Status**: Phase 2 Completed - Ready for Phase 3

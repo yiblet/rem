@@ -27,7 +27,7 @@ func TestLeftPaneRightBorderRendering(t *testing.T) {
 
 	// Update wrapped lines for the selected item
 	if len(items) > 0 {
-		items[0].UpdateWrappedLines(model.rightWidth - 6)
+		items[0].UpdateWrappedLines(model.rightWidth-6, model.height-6)
 	}
 
 	// Render the view

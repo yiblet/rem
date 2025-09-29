@@ -59,6 +59,7 @@ type StackItem struct {
 	Content       io.ReadSeekCloser
 	Preview       string
 	Lines         []string // cached wrapped lines
+	CachedWidth   int      // width used for cached lines (0 = not cached)
 	ViewPos       int      // current view position (line number)
 	SearchPattern string   // current search pattern
 	SearchMatches []int    // line numbers with matches
@@ -92,13 +93,24 @@ func (q *StackItem) GetFullContent() (string, error) {
 }
 
 // UpdateWrappedLines recalculates wrapped lines based on width
-func (q *StackItem) UpdateWrappedLines(width int) error {
+// Note: We don't limit by height here because users need to scroll through all content
+// This function is smart - it only recalculates if the width has changed
+func (q *StackItem) UpdateWrappedLines(width, height int) error {
+	// Check if we need to recalculate (width changed or no cache)
+	if q.CachedWidth == width && len(q.Lines) > 0 {
+		// Lines are already wrapped for this width, no need to recalculate
+		return nil
+	}
+
 	content, err := q.GetFullContent()
 	if err != nil {
 		return err
 	}
 
-	q.Lines = strings.Split(wrapText(content, width), "\n")
+	// Use WrapText to wrap lines to fit within width
+	// Height is ignored here - scrolling handles vertical overflow
+	q.Lines = WrapText(content, width)
+	q.CachedWidth = width // Remember the width we wrapped for
 
 	// Re-run search if we have an active pattern
 	if q.SearchPattern != "" {

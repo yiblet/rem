@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yiblet/rem/internal/config"
 	"github.com/yiblet/rem/internal/queue"
 	"github.com/yiblet/rem/internal/remfs"
 	"github.com/yiblet/rem/internal/tui"
@@ -21,14 +22,35 @@ type CLI struct {
 
 // New creates a new CLI instance
 func New() (*CLI, error) {
-	// Create filesystem rooted at rem config directory
-	remFS, err := remfs.New()
+	return NewWithArgs(nil)
+}
+
+// NewWithArgs creates a new CLI instance with custom arguments for history location
+func NewWithArgs(args *Args) (*CLI, error) {
+	var historyPath string
+	if args != nil && args.History != nil {
+		historyPath = *args.History
+	}
+
+	// Create filesystem with custom history location
+	remFS, err := remfs.NewWithHistoryPath(historyPath)
 	if err != nil {
 		return nil, fmt.Errorf("error creating rem filesystem: %w", err)
 	}
 
-	// Create stack manager
-	sm, err := queue.NewStackManager(remFS)
+	// Load configuration to get history limit
+	configManager, err := config.NewConfigManager()
+	if err != nil {
+		return nil, fmt.Errorf("error creating config manager: %w", err)
+	}
+
+	cfg, err := configManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("error loading configuration: %w", err)
+	}
+
+	// Create stack manager with configured history limit
+	sm, err := queue.NewStackManagerWithConfig(remFS, cfg.HistoryLimit)
 	if err != nil {
 		return nil, fmt.Errorf("error creating queue manager: %w", err)
 	}
@@ -50,6 +72,8 @@ func (c *CLI) Execute(args *Args) error {
 		return c.executeStore(args.Store)
 	case args.Get != nil:
 		return c.executeGet(args.Get)
+	case args.Config != nil:
+		return c.executeConfig(args.Config)
 	default:
 		// Default behavior: launch TUI
 		return c.launchTUI()
@@ -127,6 +151,60 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 		_, err = os.Stdout.Write(content)
 		return err
 	}
+}
+
+// executeConfig handles the 'rem config' command
+func (c *CLI) executeConfig(cmd *ConfigCmd) error {
+	configManager, err := config.NewConfigManager()
+	if err != nil {
+		return fmt.Errorf("failed to create config manager: %w", err)
+	}
+
+	switch {
+	case cmd.Get != nil:
+		return c.executeConfigGet(configManager, cmd.Get)
+	case cmd.Set != nil:
+		return c.executeConfigSet(configManager, cmd.Set)
+	case cmd.List != nil:
+		return c.executeConfigList(configManager, cmd.List)
+	default:
+		return fmt.Errorf("no config subcommand specified")
+	}
+}
+
+// executeConfigGet handles the 'rem config get' command
+func (c *CLI) executeConfigGet(configManager *config.ConfigManager, cmd *ConfigGetCmd) error {
+	value, err := configManager.Get(cmd.Key)
+	if err != nil {
+		return fmt.Errorf("failed to get config value: %w", err)
+	}
+
+	fmt.Printf("%s\n", value)
+	return nil
+}
+
+// executeConfigSet handles the 'rem config set' command
+func (c *CLI) executeConfigSet(configManager *config.ConfigManager, cmd *ConfigSetCmd) error {
+	if err := configManager.Update(cmd.Key, cmd.Value); err != nil {
+		return fmt.Errorf("failed to set config value: %w", err)
+	}
+
+	fmt.Printf("Set %s = %s\n", cmd.Key, cmd.Value)
+	return nil
+}
+
+// executeConfigList handles the 'rem config list' command
+func (c *CLI) executeConfigList(configManager *config.ConfigManager, cmd *ConfigListCmd) error {
+	values, err := configManager.List()
+	if err != nil {
+		return fmt.Errorf("failed to list config values: %w", err)
+	}
+
+	fmt.Printf("Current configuration:\n")
+	for key, value := range values {
+		fmt.Printf("  %s = %s\n", key, value)
+	}
+	return nil
 }
 
 // launchTUI starts the interactive TUI

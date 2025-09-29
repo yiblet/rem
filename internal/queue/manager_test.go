@@ -43,22 +43,41 @@ func (mfs *MemoryFileSystem) MkdirAll(path string, perm os.FileMode) error {
 
 func (mfs *MemoryFileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
 	var entries []fs.DirEntry
+
+	// Handle "." as root directory
+	if name == "." {
+		name = ""
+	}
+
 	prefix := name
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
 
 	for path := range mfs.MapFS {
-		if strings.HasPrefix(path, prefix) {
-			// Remove prefix to get relative name
-			relativePath := strings.TrimPrefix(path, prefix)
+		match := false
+		relativePath := ""
+
+		if prefix == "" {
+			// Root directory: include files with no path separators
+			if !strings.Contains(path, "/") {
+				match = true
+				relativePath = path
+			}
+		} else if strings.HasPrefix(path, prefix) {
+			// Subdirectory: remove prefix to get relative name
+			relativePath = strings.TrimPrefix(path, prefix)
 			// Only include direct children (no further slashes)
 			if !strings.Contains(relativePath, "/") && relativePath != "" {
-				entries = append(entries, &memoryDirEntry{
-					name: relativePath,
-					file: mfs.MapFS[path],
-				})
+				match = true
 			}
+		}
+
+		if match {
+			entries = append(entries, &memoryDirEntry{
+				name: relativePath,
+				file: mfs.MapFS[path],
+			})
 		}
 	}
 
@@ -180,8 +199,8 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
-	// Add more than MaxStackSize items
-	for i := 0; i < MaxStackSize+5; i++ {
+	// Add more than DefaultMaxStackSize items
+	for i := 0; i < DefaultMaxStackSize+5; i++ {
 		content := strings.NewReader(fmt.Sprintf("Content %d", i))
 		_, err := qm.Enqueue(content)
 		if err != nil {
@@ -189,14 +208,14 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		}
 	}
 
-	// Check that size is limited to MaxStackSize
+	// Check that size is limited to DefaultMaxStackSize
 	size, err := qm.Size()
 	if err != nil {
 		t.Fatalf("Failed to get size: %v", err)
 	}
 
-	if size != MaxStackSize {
-		t.Errorf("Expected size %d, got %d", MaxStackSize, size)
+	if size != DefaultMaxStackSize {
+		t.Errorf("Expected size %d, got %d", DefaultMaxStackSize, size)
 	}
 
 	// Check that newest items are kept (should have items 5-24)

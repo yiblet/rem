@@ -199,7 +199,7 @@ func TestRightPaneView_WithContent(t *testing.T) {
 	}
 
 	// Ensure lines are calculated
-	content.UpdateWrappedLines(model.Width - 6)
+	content.UpdateWrappedLines(model.Width-6, model.Height-6)
 
 	view, err := RightPaneView(model, content, search, false, 0)
 	if err != nil {

@@ -147,6 +147,9 @@ This testing discipline ensures robust, maintainable code and prevents regressio
 ### PLAN.md - Current Feature and Project Status
 - **Purpose**: Maintains information about the current feature being worked on, project phases, and implementation progress
 - **Contents**: Current project status, phase completion tracking, success criteria, next steps, and immediate action items
+- **Phase Status Format**: Each phase MUST have a status suffix: `[TODO]` for pending phases or `[COMPLETED]` for finished phases
+- **Testing Requirements**: Each phase MUST include high-level test descriptions explaining what tests will be added to ensure correctness
+- **Structure Reference**: Follow the format and examples provided in `docs/todo-example.md` for consistent planning
 - **Update when**: Starting new features, completing phases, changing project direction, or updating implementation status
 - **Critical for**: Understanding where the project stands and what needs to be done next
 
