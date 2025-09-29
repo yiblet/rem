@@ -17,6 +17,16 @@ const (
 	RightPane
 )
 
+// UIMode represents the current modal state of the application
+type UIMode int
+
+const (
+	NormalMode UIMode = iota
+	SearchMode
+	HelpMode
+	NumberInputMode
+)
+
 // AppMsg represents messages that the app component handles
 type AppMsg interface {
 	isAppMsg()
@@ -49,11 +59,12 @@ func (KeyPressMsg) isAppMsg() {}
 
 // AppModel orchestrates all sub-models
 type AppModel struct {
-	Width      int      // Window width
-	Height     int      // Window height
-	LeftWidth  int      // Left pane width
-	RightWidth int      // Right pane width
-	ActivePane PaneType // Currently focused pane
+	Width       int      // Window width
+	Height      int      // Window height
+	LeftWidth   int      // Left pane width
+	RightWidth  int      // Right pane width
+	ActivePane  PaneType // Currently focused pane
+	CurrentMode UIMode   // Current modal state
 
 	// Sub-models
 	LeftPane   LeftPaneModel
@@ -75,15 +86,16 @@ func NewAppModel(items []*StackItem) AppModel {
 	defaultRightWidth := 90
 
 	return AppModel{
-		Width:      defaultWidth,
-		Height:     defaultHeight,
-		LeftWidth:  defaultLeftWidth,
-		RightWidth: defaultRightWidth,
-		ActivePane: LeftPane,
-		LeftPane:   NewLeftPaneModel(defaultLeftWidth, defaultHeight),
-		RightPane:  NewRightPaneModel(defaultRightWidth, defaultHeight),
-		Search:     NewSearchModel(),
-		Items:      items,
+		Width:       defaultWidth,
+		Height:      defaultHeight,
+		LeftWidth:   defaultLeftWidth,
+		RightWidth:  defaultRightWidth,
+		ActivePane:  LeftPane,
+		CurrentMode: NormalMode,
+		LeftPane:    NewLeftPaneModel(defaultLeftWidth, defaultHeight),
+		RightPane:   NewRightPaneModel(defaultRightWidth, defaultHeight),
+		Search:      NewSearchModel(),
+		Items:       items,
 	}
 }
 
@@ -148,76 +160,39 @@ func (a *AppModel) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd
 	return a, nil
 }
 
-// handleKeyPress processes key press events and routes them to appropriate models
+// handleKeyPress processes key press events using mode-first architecture
 func (a *AppModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	// Handle global keys first
-	switch key {
-	case "ctrl+c", "q":
-		return a, tea.Quit
-	case "esc":
-		// If search is active, cancel it; otherwise quit
-		if a.Search.IsActive() {
-			a.Search.Update(CancelSearchMsg{})
-			return a, nil
-		}
-		return a, tea.Quit
-	case "tab":
-		// Toggle between left and right pane
-		if a.ActivePane == LeftPane {
-			a.ActivePane = RightPane
-		} else {
-			a.ActivePane = LeftPane
-		}
-		return a, nil
-	}
-
-	// Handle search mode keys
-	if a.Search.IsActive() {
+	// MODE-FIRST ARCHITECTURE: Check current mode before processing any keys
+	switch a.CurrentMode {
+	case SearchMode:
 		return a.handleSearchModeKeys(key)
+	case HelpMode:
+		return a.handleHelpModeKeys(key)
+	case NumberInputMode:
+		return a.handleNumberInputModeKeys(key)
+	case NormalMode:
+		return a.handleNormalModeKeys(key)
+	default:
+		// Fallback to normal mode for unknown modes
+		return a.handleNormalModeKeys(key)
 	}
-
-	// Handle number mode input
-	if newBuffer, handled := handleNumberMode(a.NumberBuffer, a.BufferPane, a.ActivePane, key); handled {
-		a.NumberBuffer = newBuffer
-		if a.NumberBuffer != "" {
-			a.BufferPane = a.ActivePane
-		}
-		return a, nil
-	}
-
-	// Get multiplier and clear buffer if we have one
-	multiplier := 1
-	if a.NumberBuffer != "" && a.BufferPane == a.ActivePane {
-		if num, err := strconv.Atoi(a.NumberBuffer); err == nil {
-			multiplier = num
-		}
-		a.NumberBuffer = ""
-	}
-
-	// Check if this is a movement command that should use the multiplier
-	if isMovementCommand(key) {
-		return a.executeCommand(multiplier, key, a.ActivePane)
-	}
-
-	// Clear buffer for non-movement keys and route to pane-specific handlers
-	a.NumberBuffer = ""
-	switch a.ActivePane {
-	case LeftPane:
-		return a.handleLeftPaneKeys(key)
-	case RightPane:
-		return a.handleRightPaneKeys(key)
-	}
-
-	return a, nil
 }
 
 // handleSearchModeKeys processes keys when in search mode
 func (a *AppModel) handleSearchModeKeys(key string) (tea.Model, tea.Cmd) {
 	switch key {
+	case "ctrl+c":
+		// Force quit is always available
+		return a, tea.Quit
+	case "esc":
+		// Cancel search and return to normal mode
+		a.Search.Update(CancelSearchMsg{})
+		a.CurrentMode = NormalMode
+		return a, nil
 	case "enter":
-		// Execute search
+		// Execute search and return to normal mode
 		a.Search.Update(ExecuteSearchMsg{})
 
 		// If search was successful and we have matches, perform the search on current item
@@ -237,24 +212,150 @@ func (a *AppModel) handleSearchModeKeys(key string) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		a.CurrentMode = NormalMode
+		return a, nil
 	case "backspace", "ctrl+h":
 		// Remove last character
 		if len(a.Search.GetInput()) > 0 {
 			newInput := a.Search.GetInput()[:len(a.Search.GetInput())-1]
 			a.Search.Update(UpdateSearchInputMsg{Input: newInput})
 		}
+		return a, nil
 	default:
 		// Add character to search input (only printable characters)
 		if len(key) == 1 && key[0] >= 32 && key[0] <= 126 {
 			newInput := a.Search.GetInput() + key
 			a.Search.Update(UpdateSearchInputMsg{Input: newInput})
 		}
+		return a, nil
+	}
+}
+
+// handleHelpModeKeys processes keys when in help mode
+func (a *AppModel) handleHelpModeKeys(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "ctrl+c":
+		// Force quit is always available
+		return a, tea.Quit
+	case "z", "esc", "q":
+		// Exit help mode and return to normal mode
+		a.CurrentMode = NormalMode
+		return a, nil
+	default:
+		// All other keys are ignored in help mode
+		return a, nil
+	}
+}
+
+// handleNumberInputModeKeys processes keys when in number input mode
+func (a *AppModel) handleNumberInputModeKeys(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "ctrl+c":
+		// Force quit is always available
+		return a, tea.Quit
+	case "esc":
+		// Cancel number input and return to normal mode
+		a.NumberBuffer = ""
+		a.CurrentMode = NormalMode
+		return a, nil
+	case "backspace":
+		// Remove last digit
+		if len(a.NumberBuffer) > 1 {
+			a.NumberBuffer = a.NumberBuffer[:len(a.NumberBuffer)-1]
+		} else {
+			a.NumberBuffer = ""
+			a.CurrentMode = NormalMode
+		}
+		return a, nil
+	default:
+		// Handle digit input or execute command
+		if key >= "0" && key <= "9" {
+			a.NumberBuffer += key
+			return a, nil
+		} else if isMovementCommand(key) {
+			// Execute command with multiplier and return to normal mode
+			multiplier := 1
+			if num, err := strconv.Atoi(a.NumberBuffer); err == nil {
+				multiplier = num
+			}
+			a.NumberBuffer = ""
+			a.CurrentMode = NormalMode
+			return a.executeCommand(multiplier, key, a.ActivePane)
+		} else {
+			// Invalid key, cancel number input
+			a.NumberBuffer = ""
+			a.CurrentMode = NormalMode
+			return a, nil
+		}
+	}
+}
+
+// handleNormalModeKeys processes keys when in normal mode
+func (a *AppModel) handleNormalModeKeys(key string) (tea.Model, tea.Cmd) {
+	// Handle global keys that work in normal mode
+	switch key {
+	case "ctrl+c", "q":
+		return a, tea.Quit
+	case "esc":
+		return a, tea.Quit
+	case "z":
+		// Enter help mode
+		a.CurrentMode = HelpMode
+		return a, nil
+	case "tab":
+		// Toggle between left and right pane
+		if a.ActivePane == LeftPane {
+			a.ActivePane = RightPane
+		} else {
+			a.ActivePane = LeftPane
+		}
+		return a, nil
+	case "h", "left":
+		// Switch to left pane (no-op if already on left)
+		if a.ActivePane == RightPane {
+			a.ActivePane = LeftPane
+		}
+		return a, nil
+	case "l", "right":
+		// Switch to right pane (no-op if already on right)
+		if a.ActivePane == LeftPane {
+			a.ActivePane = RightPane
+		}
+		return a, nil
+	}
+
+	// Handle number input (digits 1-9, 0 only after other digits)
+	if key >= "1" && key <= "9" || (key == "0" && a.NumberBuffer != "") {
+		a.NumberBuffer += key
+		a.BufferPane = a.ActivePane
+		a.CurrentMode = NumberInputMode
+		return a, nil
+	}
+
+	// Check if this is a movement command that should use any existing multiplier
+	if isMovementCommand(key) {
+		multiplier := 1
+		if a.NumberBuffer != "" && a.BufferPane == a.ActivePane {
+			if num, err := strconv.Atoi(a.NumberBuffer); err == nil {
+				multiplier = num
+			}
+			a.NumberBuffer = ""
+		}
+		return a.executeCommand(multiplier, key, a.ActivePane)
+	}
+
+	// Handle pane-specific keys
+	switch a.ActivePane {
+	case LeftPane:
+		return a.handleLeftPaneKeys(key)
+	case RightPane:
+		return a.handleRightPaneKeys(key)
 	}
 
 	return a, nil
 }
 
-// handleLeftPaneKeys processes keys when left pane is focused
+// handleLeftPaneKeys processes keys when left pane is focused in normal mode
 func (a *AppModel) handleLeftPaneKeys(key string) (tea.Model, tea.Cmd) {
 	// Only handle non-movement keys here, movement keys are handled by executeCommand
 	switch key {
@@ -265,7 +366,7 @@ func (a *AppModel) handleLeftPaneKeys(key string) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// handleRightPaneKeys processes keys when right pane is focused
+// handleRightPaneKeys processes keys when right pane is focused in normal mode
 func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 	var maxScroll int
 	if a.LeftPane.Selected < len(a.Items) {
@@ -275,7 +376,10 @@ func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "/", "?":
+		// Enter search mode
 		a.Search.Update(StartSearchMsg{})
+		a.CurrentMode = SearchMode
+		return a, nil
 	case "n":
 		if a.Search.HasMatches() {
 			a.Search.Update(NextMatchMsg{})
@@ -285,6 +389,7 @@ func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 				a.RightPane.ViewPos = newViewPos
 			}
 		}
+		return a, nil
 	case "N":
 		if a.Search.HasMatches() {
 			a.Search.Update(PrevMatchMsg{})
@@ -294,16 +399,21 @@ func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 				a.RightPane.ViewPos = newViewPos
 			}
 		}
+		return a, nil
 	case "ctrl+u":
 		a.RightPane.Update(PageUpMsg{})
+		return a, nil
 	case "ctrl+d":
 		a.RightPane.Update(PageDownMsg{MaxScroll: maxScroll})
+		return a, nil
 	case "ctrl+b":
 		pageSize := a.Height - 6
 		a.RightPane.Update(JumpMsg{Direction: "k", Lines: pageSize, MaxScroll: maxScroll})
+		return a, nil
 	case "ctrl+f":
 		pageSize := a.Height - 6
 		a.RightPane.Update(JumpMsg{Direction: "j", Lines: pageSize, MaxScroll: maxScroll})
+		return a, nil
 	}
 
 	return a, nil
@@ -322,6 +432,12 @@ func (a *AppModel) Init() tea.Cmd {
 func AppView(model AppModel) (string, error) {
 	if model.Width == 0 {
 		return "Initializing...", nil
+	}
+
+	// Show help view if in help mode
+	if model.CurrentMode == HelpMode {
+		helpView := renderHelpView(model)
+		return helpView + "\n\n" + renderStatusLine(model), nil
 	}
 
 	leftPaneFocused := model.ActivePane == LeftPane
@@ -399,11 +515,16 @@ func renderStatusLine(model AppModel) string {
 		currentMatch, totalMatches := model.Search.GetCurrentMatch()
 		statusLine = fmt.Sprintf("Pattern: %s - Match %d of %d", model.Search.GetPattern(), currentMatch+1, totalMatches)
 	} else {
-		// Show help text
-		if model.ActivePane == LeftPane {
-			statusLine = "Left Pane: ↑/k ↓/j (navigate) g/G (top/bottom) ##/##j/##k (jump) Tab (switch) q (quit)"
-		} else {
-			statusLine = "Right Pane: ↑/k ↓/j (scroll) / (search) n/N (next/prev) g/G (top/bottom) ##j/##k (jump) q (quit)"
+		// Show mode-specific status text
+		switch model.CurrentMode {
+		case HelpMode:
+			statusLine = "Help Mode - Press z to return to normal view, q to quit"
+		case SearchMode:
+			statusLine = fmt.Sprintf("Search: /%s (Enter to execute, Esc to cancel)", model.Search.GetInput())
+		case NumberInputMode:
+			statusLine = fmt.Sprintf("Number Input: %s (Enter command or Esc to cancel)", model.NumberBuffer)
+		default: // NormalMode
+			statusLine = "Press z for help, q to quit"
 		}
 	}
 
@@ -411,6 +532,54 @@ func renderStatusLine(model AppModel) string {
 		Width(model.Width)
 
 	return statusStyle.Render(statusLine)
+}
+
+// renderHelpView renders the help content as a single pane (pure function)
+func renderHelpView(model AppModel) string {
+	helpContent := `rem - Enhanced Clipboard Stack Manager
+
+NAVIGATION COMMANDS:
+  j, ↓        Move down (left pane: next item, right pane: scroll down)
+  k, ↑        Move up (left pane: previous item, right pane: scroll up)
+  g           Go to top (with number: go to line N)
+  G           Go to bottom
+  #j, #k      Jump N lines (e.g., 10j moves down 10 lines/items)
+
+PANE SWITCHING:
+  Tab         Toggle between left and right panes
+  h, ←        Switch to left pane
+  l, →        Switch to right pane
+  z           Toggle this help screen
+
+CONTENT VIEWING:
+  /pattern    Search for text pattern in current item
+  n           Next search match
+  N           Previous search match
+  Ctrl+u      Page up (right pane)
+  Ctrl+d      Page down (right pane)
+  Ctrl+b      Page up (full screen)
+  Ctrl+f      Page down (full screen)
+
+STACK BEHAVIOR:
+  Index 0     Most recent item (top of stack)
+  Index 1+    Older items in reverse chronological order
+  Max 20      Stack automatically removes oldest items
+
+GLOBAL COMMANDS:
+  q           Quit
+  Esc         Cancel search or quit
+  Ctrl+c      Force quit
+
+Press z again to return to normal view.`
+
+	// Create a bordered help view
+	helpStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(1).
+		Width(model.Width - 4).
+		Height(model.Height - 4)
+
+	return helpStyle.Render(helpContent)
 }
 
 // handleNumberMode processes digit input and backspace for vim-style number prefixes

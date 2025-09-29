@@ -97,12 +97,48 @@ The newest files (latest timestamps) correspond to stack index 0.
 - Preview length: ~50 characters with truncation
 
 ### TUI Key Bindings
-- Left pane: j/k navigation, Tab to switch panes
+- Left pane: j/k navigation, Tab/h/l/←/→ to switch panes
 - Right pane: j/k scroll, `/` search, n/N next/prev match, g/G top/bottom
-- Global: q to quit
+- Global: Tab/h/l/←/→ (switch panes), z (help), q to quit
 
 ### Error Handling
 CLI provides clean error messages without emojis. All user-facing output is text-only for terminal compatibility.
+
+## Testing Requirements (CRITICAL)
+
+**MUST ALWAYS WRITE TESTS**: Every feature you implement MUST include comprehensive tests. This is non-negotiable for code quality and maintainability.
+
+### Testing Standards
+- **Unit Tests Required**: All new functionality must have corresponding unit tests
+- **Integration Tests**: Complex features should include integration tests where appropriate
+- **Test Coverage**: Aim for high test coverage on business logic and UI interactions
+- **Test-Driven Development**: Consider writing tests before implementation when possible
+
+### Testing Framework
+- Uses Go's built-in testing framework (`go test`)
+- TUI tests use mock/stub patterns for Bubble Tea components
+- All tests should be runnable with `go test ./...`
+
+### Test Categories Required
+1. **State Management Tests**: Test model state changes and updates
+2. **Key Binding Tests**: Test all keyboard interactions and navigation
+3. **View Rendering Tests**: Test UI output and layout
+4. **Edge Case Tests**: Test boundary conditions and error scenarios
+5. **Integration Tests**: Test complete workflows and component interactions
+
+### Running Tests
+```bash
+# Run all tests
+go test ./...
+
+# Run TUI tests specifically
+go test ./internal/tui -v
+
+# Run with coverage
+go test -cover ./...
+```
+
+This testing discipline ensures robust, maintainable code and prevents regressions as the project evolves.
 
 ## Documentation Maintenance (CRITICAL)
 

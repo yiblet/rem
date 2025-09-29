@@ -202,6 +202,7 @@ type StackItem struct {
 
 #### Pager Features (Less-Compatible)
 - **Navigation**: j/k, g/G, Ctrl+u/d, Ctrl+b/f, #j/#k
+- **Pane Switching**: Tab, h/l, ←/→ (directional pane navigation)
 - **Search**: `/pattern`, `n`/`N` for next/prev match
 - **Highlighting**: Regex matches with current match emphasis
 - **Position Memory**: Each item remembers scroll position independently

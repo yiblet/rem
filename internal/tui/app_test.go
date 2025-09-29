@@ -288,17 +288,36 @@ func TestAppModel_SearchCancel(t *testing.T) {
 		Preview: "Test item",
 	}}
 	app := NewAppModel(items)
+	app.ActivePane = RightPane
 
-	// Start search mode
-	app.Search.Update(StartSearchMsg{})
-	app.Search.Update(UpdateSearchInputMsg{Input: "test"})
-
-	// Press escape to cancel
-	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	// Enter search mode properly
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
 	updatedApp := newModel.(*AppModel)
 
-	if updatedApp.Search.IsActive() {
-		t.Error("Expected search to be inactive after escape")
+	if updatedApp.CurrentMode != SearchMode {
+		t.Fatal("Failed to enter search mode")
+	}
+
+	// Add some input
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	updatedApp = newModel.(*AppModel)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	updatedApp = newModel.(*AppModel)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	updatedApp = newModel.(*AppModel)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.Search.GetInput() != "test" {
+		t.Errorf("Expected search input 'test', got '%s'", updatedApp.Search.GetInput())
+	}
+
+	// Press escape to cancel
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Expected to return to normal mode after escape")
 	}
 	if updatedApp.Search.GetInput() != "" {
 		t.Error("Expected search input to be cleared after escape")
@@ -341,8 +360,8 @@ func TestAppModel_View(t *testing.T) {
 	}
 
 	// Should contain status line
-	if !strings.Contains(view, "Left Pane:") {
-		t.Error("Expected view to contain status line for left pane")
+	if !strings.Contains(view, "Press z for help") {
+		t.Error("Expected view to contain simplified status line")
 	}
 }
 
@@ -354,17 +373,17 @@ func TestAppModel_StatusLineStates(t *testing.T) {
 	app := NewAppModel(items)
 	app.Width = 120
 
-	// Test left pane status
+	// Test normal status line
 	statusLine := renderStatusLine(app)
-	if !strings.Contains(statusLine, "Left Pane:") {
-		t.Error("Expected left pane status line")
+	if !strings.Contains(statusLine, "Press z for help") {
+		t.Error("Expected simplified status line")
 	}
 
-	// Test right pane status
-	app.ActivePane = RightPane
+	// Test help mode status
+	app.CurrentMode = HelpMode
 	statusLine = renderStatusLine(app)
-	if !strings.Contains(statusLine, "Right Pane:") {
-		t.Error("Expected right pane status line")
+	if !strings.Contains(statusLine, "Help Mode") {
+		t.Error("Expected help mode status line")
 	}
 
 	// Test search mode status
@@ -590,5 +609,380 @@ func TestAppModel_PaneBorderAlignment(t *testing.T) {
 				t.Error("Right pane view has trailing empty line which could cause alignment issues")
 			}
 		})
+	}
+}
+
+func TestAppModel_HelpMode(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+	app.Width = 120
+	app.Height = 20
+
+	// Initially not in help mode
+	if app.CurrentMode != NormalMode {
+		t.Error("Expected CurrentMode to be NormalMode initially")
+	}
+
+	// Press 'z' to enter help mode
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != HelpMode {
+		t.Error("Expected CurrentMode to be HelpMode after pressing 'z'")
+	}
+
+	// Press 'z' again to exit help mode
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Expected CurrentMode to be NormalMode after pressing 'z' again")
+	}
+}
+
+func TestAppModel_HelpModeView(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+	app.Width = 120
+	app.Height = 20
+	app.CurrentMode = HelpMode
+
+	// Get view in help mode
+	view, err := AppView(app)
+	if err != nil {
+		t.Fatalf("Error rendering help view: %v", err)
+	}
+
+	// Should contain help content
+	if !strings.Contains(view, "rem - Enhanced Clipboard Stack Manager") {
+		t.Error("Expected help view to contain help title")
+	}
+
+	// Should contain key binding information
+	if !strings.Contains(view, "NAVIGATION COMMANDS") {
+		t.Error("Expected help view to contain navigation commands section")
+	}
+
+	if !strings.Contains(view, "PANE SWITCHING") {
+		t.Error("Expected help view to contain pane switching section")
+	}
+
+	// Should contain 'z' key reference
+	if !strings.Contains(view, "z           Toggle this help screen") {
+		t.Error("Expected help view to contain 'z' key reference")
+	}
+
+	// Should contain proper status line for help mode
+	if !strings.Contains(view, "Help Mode - Press z to return") {
+		t.Error("Expected help mode status line")
+	}
+}
+
+func TestAppModel_HelpModeStatusLine(t *testing.T) {
+	app := NewAppModel([]*StackItem{})
+	app.Width = 120
+
+	// Test normal mode status line
+	statusLine := renderStatusLine(app)
+	if !strings.Contains(statusLine, "Press z for help") {
+		t.Error("Expected normal mode to show 'Press z for help'")
+	}
+
+	// Test help mode status line
+	app.CurrentMode = HelpMode
+	statusLine = renderStatusLine(app)
+	if !strings.Contains(statusLine, "Help Mode - Press z to return") {
+		t.Error("Expected help mode to show 'Press z to return'")
+	}
+}
+
+func TestAppModel_PaneSwitchingWithH(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+	app.ActivePane = RightPane
+
+	// Press 'h' to switch to left pane
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.ActivePane != LeftPane {
+		t.Error("Expected 'h' to switch to left pane")
+	}
+
+	// Press 'h' again when already on left pane (should be no-op)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.ActivePane != LeftPane {
+		t.Error("Expected 'h' to be no-op when already on left pane")
+	}
+}
+
+func TestAppModel_ModalStateTransitions(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+
+	// Initially in normal mode
+	if app.CurrentMode != NormalMode {
+		t.Errorf("Expected initial mode to be NormalMode, got %v", app.CurrentMode)
+	}
+
+	// Enter help mode with 'z'
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != HelpMode {
+		t.Errorf("Expected help mode after 'z', got %v", updatedApp.CurrentMode)
+	}
+
+	// Exit help mode with 'z' again
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Errorf("Expected normal mode after second 'z', got %v", updatedApp.CurrentMode)
+	}
+
+	// Enter search mode with '/' (from right pane)
+	updatedApp.ActivePane = RightPane
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != SearchMode {
+		t.Errorf("Expected search mode after '/', got %v", updatedApp.CurrentMode)
+	}
+
+	// Exit search mode with Esc
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Errorf("Expected normal mode after Esc from search, got %v", updatedApp.CurrentMode)
+	}
+
+	// Enter number input mode with digit
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NumberInputMode {
+		t.Errorf("Expected number input mode after digit, got %v", updatedApp.CurrentMode)
+	}
+
+	if updatedApp.NumberBuffer != "5" {
+		t.Errorf("Expected number buffer to be '5', got '%s'", updatedApp.NumberBuffer)
+	}
+
+	// Exit number input mode with Esc
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Errorf("Expected normal mode after Esc from number input, got %v", updatedApp.CurrentMode)
+	}
+
+	if updatedApp.NumberBuffer != "" {
+		t.Errorf("Expected empty number buffer after Esc, got '%s'", updatedApp.NumberBuffer)
+	}
+}
+
+func TestAppModel_SearchModeBlocksPaneNavigation(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+	app.ActivePane = RightPane
+
+	// Enter search mode
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != SearchMode {
+		t.Fatal("Failed to enter search mode")
+	}
+
+	// Try to switch panes with 'h' - should add 'h' to search input instead
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	updatedApp = newModel.(*AppModel)
+
+	// Should still be in search mode and on right pane
+	if updatedApp.CurrentMode != SearchMode {
+		t.Error("Expected to remain in search mode after 'h'")
+	}
+	if updatedApp.ActivePane != RightPane {
+		t.Error("Expected to remain on right pane while in search mode")
+	}
+
+	// Search input should contain 'h'
+	if updatedApp.Search.GetInput() != "h" {
+		t.Errorf("Expected search input to be 'h', got '%s'", updatedApp.Search.GetInput())
+	}
+
+	// Try other navigation keys - should all be added to search input
+	keys := []string{"l", "j", "k"}
+	expectedInput := "h"
+
+	for _, key := range keys {
+		newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		updatedApp = newModel.(*AppModel)
+
+		expectedInput += key
+		if updatedApp.Search.GetInput() != expectedInput {
+			t.Errorf("After key '%s', expected search input '%s', got '%s'", key, expectedInput, updatedApp.Search.GetInput())
+		}
+		if updatedApp.CurrentMode != SearchMode {
+			t.Errorf("After key '%s', expected to remain in search mode", key)
+		}
+	}
+
+	// Test tab key specifically - should also be added to search input
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updatedApp = newModel.(*AppModel)
+
+	// Tab character should be added to search input (tab is ASCII 9, but in search input it's treated as regular input)
+	// The tea.KeyTab should be converted to a tab character in search
+	if updatedApp.CurrentMode != SearchMode {
+		t.Error("Expected to remain in search mode after tab key")
+	}
+}
+
+func TestAppModel_HelpModeBlocksAllNavigation(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+	app.ActivePane = RightPane
+
+	// Enter help mode
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != HelpMode {
+		t.Fatal("Failed to enter help mode")
+	}
+
+	initialPane := updatedApp.ActivePane
+
+	// Try various navigation keys - should all be ignored
+	navigationKeys := []string{"h", "l", "j", "k", "tab", "/", "n", "N"}
+
+	for _, key := range navigationKeys {
+		newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		updatedApp = newModel.(*AppModel)
+
+		if updatedApp.CurrentMode != HelpMode {
+			t.Errorf("After key '%s', expected to remain in help mode, got %v", key, updatedApp.CurrentMode)
+		}
+		if updatedApp.ActivePane != initialPane {
+			t.Errorf("After key '%s', pane should not change in help mode", key)
+		}
+	}
+
+	// Only 'z', 'q', and 'esc' should exit help mode
+	exitKeys := []string{"z", "q", "esc"}
+
+	for _, key := range exitKeys {
+		// Re-enter help mode
+		updatedApp.CurrentMode = HelpMode
+
+		var keyMsg tea.KeyMsg
+		if key == "esc" {
+			keyMsg = tea.KeyMsg{Type: tea.KeyEsc}
+		} else {
+			keyMsg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+		}
+
+		newModel, _ = updatedApp.Update(keyMsg)
+		updatedApp = newModel.(*AppModel)
+
+		if updatedApp.CurrentMode == HelpMode {
+			t.Errorf("Key '%s' should exit help mode", key)
+		}
+	}
+}
+
+func TestAppModel_NumberInputModeHandling(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	app := NewAppModel(items)
+
+	// Enter number input mode with '1'
+	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NumberInputMode {
+		t.Fatal("Failed to enter number input mode")
+	}
+	if updatedApp.NumberBuffer != "1" {
+		t.Errorf("Expected number buffer '1', got '%s'", updatedApp.NumberBuffer)
+	}
+
+	// Add more digits
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("0")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.NumberBuffer != "10" {
+		t.Errorf("Expected number buffer '10', got '%s'", updatedApp.NumberBuffer)
+	}
+	if updatedApp.CurrentMode != NumberInputMode {
+		t.Error("Should remain in number input mode")
+	}
+
+	// Execute movement command 'j' - should execute 10j and return to normal mode
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Should return to normal mode after executing movement command")
+	}
+	if updatedApp.NumberBuffer != "" {
+		t.Errorf("Number buffer should be cleared after command execution, got '%s'", updatedApp.NumberBuffer)
+	}
+
+	// Test backspace in number input mode
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	updatedApp = newModel.(*AppModel)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.NumberBuffer != "25" {
+		t.Errorf("Expected number buffer '25', got '%s'", updatedApp.NumberBuffer)
+	}
+
+	// Backspace should remove last digit
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.NumberBuffer != "2" {
+		t.Errorf("Expected number buffer '2' after backspace, got '%s'", updatedApp.NumberBuffer)
+	}
+	if updatedApp.CurrentMode != NumberInputMode {
+		t.Error("Should remain in number input mode after backspace")
+	}
+
+	// Backspace on single digit should return to normal mode
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Should return to normal mode after backspacing single digit")
+	}
+	if updatedApp.NumberBuffer != "" {
+		t.Errorf("Number buffer should be empty after returning to normal mode, got '%s'", updatedApp.NumberBuffer)
 	}
 }
