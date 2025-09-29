@@ -53,7 +53,7 @@ go run ./cmd/test-integration/ # Test TUI rendering
 
 ### Key Design Principles
 
-**LIFO Stack Model**: Items are stored newest-first (index 0 = most recent). The stack auto-cleans after 20 items.
+**LIFO Stack Model**: Items are stored newest-first (index 0 = most recent). The stack auto-cleans after 255 items (DefaultMaxStackSize).
 
 **Stream-Based Content**: All content is modeled as `io.ReadSeekCloser` for memory efficiency and consistent interfaces across input sources.
 
@@ -92,7 +92,7 @@ The newest files (latest timestamps) correspond to stack index 0.
 - Tests validate LIFO behavior and size limits
 
 ### Constants and Configuration
-- `MaxStackSize = 20` - Maximum items in stack before auto-cleanup
+- `DefaultMaxStackSize = 255` - Maximum items in stack before auto-cleanup
 - Content directory: `content/` within rem config directory
 - Preview length: ~50 characters with truncation
 

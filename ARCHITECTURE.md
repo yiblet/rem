@@ -161,7 +161,7 @@ type StringContentReader struct { ... }    // For string/stdin input
 - **ISO timestamp naming**: RFC3339 format with microsecond precision
 - **RemFS abstraction**: Filesystem interface rooted at `~/.config/rem/`
 - **Lazy loading**: Content accessed via `io.ReadSeekCloser` on demand
-- **Auto-cleanup**: Oldest files removed when stack exceeds 20 items
+- **Auto-cleanup**: Oldest files removed when stack exceeds 255 items (DefaultMaxStackSize)
 - **Testable design**: In-memory filesystem for unit tests
 
 ### 5. Interactive TUI Layer
@@ -290,7 +290,7 @@ TUI Input → Mode Handling → State Update → Content Rendering → Display
 1. **Core Stack Manager**: File-based persistence with auto-cleanup (`internal/queue/`)
    - LIFO stack with newest items at index 0
    - ISO timestamp-based filenames for ordering
-   - Auto-cleanup when exceeding 20 items
+   - Auto-cleanup when exceeding 255 items (DefaultMaxStackSize)
    - Legacy aliases for backward compatibility
 2. **RemFS Abstraction**: fs.FS interface rooted at config directory (`internal/remfs/`)
    - Testable filesystem abstraction

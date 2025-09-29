@@ -4,11 +4,11 @@ A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a 
 
 ## Overview
 
-`rem` maintains a configurable history of clipboard entries, allowing you to access and manage the last 20 items copied to your clipboard. It provides an intuitive CLI interface with dual-pane viewing and seamless integration with your existing clipboard workflow.
+`rem` maintains a configurable history of clipboard entries, allowing you to access and manage the last 255 items copied to your clipboard. It provides an intuitive CLI interface with dual-pane viewing and seamless integration with your existing clipboard workflow.
 
 ## Features
 
-- **Persistent Stack**: Maintains the last 20 clipboard entries in a local config folder
+- **Persistent Stack**: Maintains the last 255 clipboard entries in a local config folder
 - **Interactive Viewer**: Dual-pane CLI interface for browsing clipboard history
 - **Seamless Integration**: Works alongside existing `pbcopy`/`pbpaste` workflows
 - **Multiple Input Methods**: Accept input from pipes, clipboard, or direct commands
@@ -66,8 +66,8 @@ rem store -c
 ## Stack Behavior (LIFO)
 
 - **Position 0**: Top of stack - most recently added item
-- **Positions 1-19**: Historical entries in reverse chronological order (newer items push older ones down)
-- **Automatic Management**: Oldest entries are automatically removed when the stack exceeds 20 items
+- **Positions 1-254**: Historical entries in reverse chronological order (newer items push older ones down)
+- **Automatic Management**: Oldest entries are automatically removed when the stack exceeds 255 items
 - **LIFO (Last In, First Out)**: Most recent content is always accessible at index 0
 
 ## Configuration

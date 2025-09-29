@@ -218,18 +218,18 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		t.Errorf("Expected size %d, got %d", DefaultMaxStackSize, size)
 	}
 
-	// Check that newest items are kept (should have items 5-24)
+	// Check that newest items are kept (should have items 5-259)
 	items, err := qm.List()
 	if err != nil {
 		t.Fatalf("Failed to list items: %v", err)
 	}
 
-	// First item should be newest (Content 24)
-	if !strings.Contains(items[0].Preview, "Content 24") {
-		t.Errorf("Expected newest item to contain 'Content 24', got '%s'", items[0].Preview)
+	// First item should be newest (Content 259, since we added 0-259)
+	if !strings.Contains(items[0].Preview, "Content 259") {
+		t.Errorf("Expected newest item to contain 'Content 259', got '%s'", items[0].Preview)
 	}
 
-	// Last item should be Content 5 (oldest remaining)
+	// Last item should be Content 5 (oldest remaining after removing 0-4)
 	lastIndex := len(items) - 1
 	if !strings.Contains(items[lastIndex].Preview, "Content 5") {
 		t.Errorf("Expected oldest item to contain 'Content 5', got '%s'", items[lastIndex].Preview)

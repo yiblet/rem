@@ -90,7 +90,7 @@
 - ✅ **Configuration System**: Created `internal/config` package with YAML-based config management
 - ✅ **CLI Commands**: Added `rem config get/set/list` subcommands with validation
 - ✅ **Stack Manager Integration**: Modified StackManager to use configurable history limits
-- ✅ **Backward Compatibility**: Maintained default behavior with `DefaultMaxStackSize = 20`
+- ✅ **Backward Compatibility**: Maintained default behavior with `DefaultMaxStackSize = 255`
 - ✅ **Comprehensive Testing**: Unit tests for config package and integration tests for CLI commands
 - ✅ **Configuration Schema**: Supports `history-limit`, `show-binary`, and `history-location` settings
 
