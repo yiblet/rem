@@ -98,8 +98,9 @@ func TestModelViewPanesAlignment(t *testing.T) {
 	lines := strings.Split(view, "\n")
 
 	// Check the specific issue with borders - both should be present
-	leftPane := model.renderLeftPane()
-	rightPane := model.renderRightPane()
+	// Use the pure view functions
+	leftPane, _ := LeftPaneView(model.app.LeftPane, model.app.Items, false)
+	rightPane, _ := RightPaneView(model.app.RightPane, model.app.Items[0], model.app.Search, false, 0)
 
 	leftLines := strings.Split(leftPane, "\n")
 	rightLines := strings.Split(rightPane, "\n")

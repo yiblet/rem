@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // StringReadSeekCloser wraps a string to implement io.ReadSeekCloser
@@ -179,6 +177,7 @@ func (q *StackItem) ClearSearch() {
 }
 
 type Model struct {
+	// Legacy fields maintained for backward compatibility
 	cursor      int
 	selected    int
 	width       int
@@ -190,9 +189,14 @@ type Model struct {
 	searchInput string // current search input
 	searchError string // search error message
 	items       []*StackItem
+
+	// New Elm architecture model
+	app *AppModel
 }
 
 func NewModel(items []*StackItem) Model {
+	app := NewAppModel(items)
+
 	return Model{
 		cursor:      0,
 		selected:    0,
@@ -200,465 +204,74 @@ func NewModel(items []*StackItem) Model {
 		rightWidth:  50, // Will be recalculated on resize
 		focusedPane: 0,  // Start with left pane focused
 		items:       items,
+		app:         &app,
 	}
 }
 
 // UpdateMockSize is a helper method for testing that simulates a window resize
 func (m *Model) UpdateMockSize(width, height int) {
+	// Update legacy fields for compatibility
 	m.width = width
 	m.height = height
 	m.rightWidth = width - m.leftWidth - 3 // Account for borders and spacing
 	if m.rightWidth < 20 {
 		m.rightWidth = 20
 	}
-	// Recalculate wrapped lines for current item when window size changes
-	if m.selected < len(m.items) && len(m.items) > 0 {
-		m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-	}
+
+	// Delegate to app model
+	newModel, _ := m.app.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	m.app = newModel.(*AppModel)
+
+	// Sync legacy fields from app component
+	m.syncFromApp()
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return m.app.Init()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		return m.handleWindowResize(msg)
-	case tea.KeyMsg:
-		if m.searchMode {
-			return m.handleSearchMode(msg)
-		}
-		return m.handleNormalMode(msg)
-	}
-	return m, nil
+	// Delegate to app model
+	newAppModel, cmd := m.app.Update(msg)
+	m.app = newAppModel.(*AppModel)
+
+	// Sync legacy fields from app model
+	m.syncFromApp()
+
+	return m, cmd
 }
 
-func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	m.width = msg.Width
-	m.height = msg.Height
-	m.rightWidth = msg.Width - m.leftWidth - 3 // Account for borders and spacing
-	if m.rightWidth < 20 {
-		m.rightWidth = 20
-	}
-	// Recalculate wrapped lines for current item when window size changes
-	if m.selected < len(m.items) {
-		m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-	}
-	return m, nil
-}
-
-func (m Model) handleSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-
-	switch key {
-	case "enter":
-		// Execute search
-		if m.selected < len(m.items) {
-			item := m.items[m.selected]
-			if err := item.performSearch(m.searchInput); err != nil {
-				m.searchError = err.Error()
-			} else {
-				m.searchError = ""
-				// Jump to first match if found
-				if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
-					// Center the match on screen
-					availableHeight := m.height - 6
-					item.ViewPos = max(0, matchLine-availableHeight/2)
-					item.ViewPos = min(item.ViewPos, m.getMaxScroll(item))
-				}
-			}
-		}
-		m.searchMode = false
-	case "esc":
-		// Cancel search
-		m.searchMode = false
-		m.searchInput = ""
-		m.searchError = ""
-	case "backspace", "ctrl+h":
-		// Remove last character
-		if len(m.searchInput) > 0 {
-			m.searchInput = m.searchInput[:len(m.searchInput)-1]
-		}
-	default:
-		// Add character to search input (only printable characters)
-		if len(key) == 1 && key[0] >= 32 && key[0] <= 126 {
-			m.searchInput += key
-		}
-	}
-	return m, nil
-}
-
-func (m Model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-
-	switch key {
-	case "ctrl+c", "q":
-		return m, tea.Quit
-	case "esc":
-		// Only quit if not in search mode
-		return m, tea.Quit
-	case "tab":
-		// Toggle between left and right pane
-		m.focusedPane = (m.focusedPane + 1) % 2
-	default:
-		if m.focusedPane == 0 {
-			return m.handleLeftPaneControls(key)
-		}
-		return m.handleRightPaneControls(key)
-	}
-	return m, nil
-}
-
-func (m Model) handleLeftPaneControls(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-			m.selected = m.cursor
-			// Update wrapped lines for newly selected item
-			if m.selected < len(m.items) {
-				m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-			}
-		}
-	case "down", "j":
-		if m.cursor < len(m.items)-1 {
-			m.cursor++
-			m.selected = m.cursor
-			// Update wrapped lines for newly selected item
-			if m.selected < len(m.items) {
-				m.items[m.selected].UpdateWrappedLines(m.rightWidth - 6)
-			}
-		}
-	}
-	return m, nil
-}
-
-func (m Model) handleRightPaneControls(key string) (tea.Model, tea.Cmd) {
-	if m.selected >= len(m.items) {
-		return m, nil
-	}
-
-	item := m.items[m.selected]
-	maxScroll := m.getMaxScroll(item)
-
-	// Handle search-related keys first
-	switch key {
-	case "/", "?":
-		// Start search mode (forward or backward)
-		m.searchMode = true
-		m.searchInput = ""
-		m.searchError = ""
-	case "n":
-		// Next search match
-		if item.NextMatch() {
-			if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
-				// Center the match on screen
-				availableHeight := m.height - 6
-				item.ViewPos = max(0, matchLine-availableHeight/2)
-				item.ViewPos = min(item.ViewPos, maxScroll)
-			}
-		}
-	case "N":
-		// Previous search match
-		if item.PrevMatch() {
-			if matchLine := item.GetCurrentMatchLine(); matchLine >= 0 {
-				// Center the match on screen
-				availableHeight := m.height - 6
-				item.ViewPos = max(0, matchLine-availableHeight/2)
-				item.ViewPos = min(item.ViewPos, maxScroll)
-			}
-		}
-	default:
-		// Handle number prefixes (e.g., "10j", "5k")
-		if matched, _ := regexp.MatchString(`^\d+[jk]$`, key); matched {
-			numStr := key[:len(key)-1]
-			direction := key[len(key)-1:]
-			if num, err := strconv.Atoi(numStr); err == nil {
-				switch direction {
-				case "j":
-					item.ViewPos = min(item.ViewPos+num, maxScroll)
-				case "k":
-					item.ViewPos = max(item.ViewPos-num, 0)
-				}
-			}
-		} else {
-			switch key {
-			case "up", "k":
-				if item.ViewPos > 0 {
-					item.ViewPos--
-				}
-			case "down", "j":
-				if item.ViewPos < maxScroll {
-					item.ViewPos++
-				}
-			case "g":
-				item.ViewPos = 0 // Go to top
-			case "G":
-				item.ViewPos = maxScroll // Go to bottom
-			case "ctrl+u":
-				// Page up (half page)
-				pageSize := (m.height - 6) / 2
-				item.ViewPos = max(item.ViewPos-pageSize, 0)
-			case "ctrl+d":
-				// Page down (half page)
-				pageSize := (m.height - 6) / 2
-				item.ViewPos = min(item.ViewPos+pageSize, maxScroll)
-			case "ctrl+b":
-				// Full page up
-				pageSize := m.height - 6
-				item.ViewPos = max(item.ViewPos-pageSize, 0)
-			case "ctrl+f":
-				// Full page down
-				pageSize := m.height - 6
-				item.ViewPos = min(item.ViewPos+pageSize, maxScroll)
-			}
-		}
-	}
-	return m, nil
-}
 
 func (m Model) View() string {
-	if m.width == 0 {
-		return "Initializing..."
-	}
-
-	leftPane := m.renderLeftPane()
-	rightPane := m.renderRightPane()
-
-	// Join left and right panes side by side
-	leftLines := strings.Split(leftPane, "\n")
-	rightLines := strings.Split(rightPane, "\n")
-
-	maxLines := len(leftLines)
-	if len(rightLines) > maxLines {
-		maxLines = len(rightLines)
-	}
-
-	var result strings.Builder
-	for i := 0; i < maxLines; i++ {
-		leftLine := ""
-		rightLine := ""
-
-		if i < len(leftLines) {
-			leftLine = leftLines[i]
-		}
-		if i < len(rightLines) {
-			rightLine = rightLines[i]
-		}
-
-		// Don't pad the left line - lipgloss has already rendered it with proper width and borders
-		// Just add a single space as separator between panes
-		result.WriteString(leftLine + " " + rightLine + "\n")
-	}
-
-	result.WriteString("\n" + m.renderStatusLine())
-
-	return result.String()
+	// Delegate to app component
+	return m.app.View()
 }
 
-func (m Model) renderStatusLine() string {
-	var statusLine string
-	if m.searchMode {
-		// Show search input with cursor
-		statusLine = fmt.Sprintf("/%s", m.searchInput)
-		if len(m.searchError) > 0 {
-			statusLine += fmt.Sprintf(" (Error: %s)", m.searchError)
-		} else {
-			statusLine += " (Enter to search, Esc to cancel)"
-		}
-	} else if m.selected < len(m.items) && len(m.items[m.selected].SearchMatches) > 0 {
-		// Show search results
-		item := m.items[m.selected]
-		currentMatch := item.SearchIndex + 1
-		totalMatches := len(item.SearchMatches)
-		statusLine = fmt.Sprintf("Pattern: %s - Match %d of %d", item.SearchPattern, currentMatch, totalMatches)
+// syncFromApp updates legacy fields from the app model state for backward compatibility
+func (m *Model) syncFromApp() {
+	// Sync cursor and selection
+	m.cursor = m.app.LeftPane.Cursor
+	m.selected = m.app.LeftPane.Selected
+
+	// Sync active pane (convert PaneType to int)
+	if m.app.ActivePane == LeftPane {
+		m.focusedPane = 0
 	} else {
-		// Show help text
-		if m.focusedPane == 0 {
-			statusLine = "Left Pane: ↑/k ↓/j (navigate & view) Tab (switch) q (quit)"
-		} else {
-			statusLine = "Right Pane: ↑/k ↓/j (scroll) / (search) n/N (next/prev) g/G (top/bottom) ##j/##k (jump) q (quit)"
-		}
+		m.focusedPane = 1
 	}
 
-	statusStyle := lipgloss.NewStyle().
-		Width(m.width)
+	// Sync search state
+	m.searchMode = m.app.Search.IsActive()
+	m.searchInput = m.app.Search.GetInput()
+	m.searchError = m.app.Search.GetError()
 
-	return statusStyle.Render(statusLine)
+	// Sync dimensions
+	m.width = m.app.Width
+	m.height = m.app.Height
+	m.leftWidth = m.app.LeftWidth
+	m.rightWidth = m.app.RightWidth
 }
 
-func (m Model) renderLeftPane() string {
-	borderColor := "62"
-	if m.focusedPane == 0 {
-		borderColor = "205" // Highlight focused pane
-	}
-
-	style := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(borderColor)).
-		Padding(0, 1).
-		Width(m.leftWidth).
-		Height(m.height - 4).
-		Inline(false)
-
-	var content strings.Builder
-	title := "Queue"
-	if m.focusedPane == 0 {
-		title = "● " + title // Active indicator
-	}
-	content.WriteString(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n")
-
-	for i, item := range m.items {
-		// Calculate available width for preview (account for "N. " prefix and padding)
-		availableWidth := m.leftWidth - 6 // Account for borders, padding, and "N. "
-		preview := item.Preview
-
-		// Remove any newlines from preview first
-		preview = strings.ReplaceAll(preview, "\n", " ")
-
-		// Truncate preview if too long
-		if len(preview) > availableWidth {
-			preview = preview[:availableWidth-3] + "..."
-		}
-
-		line := fmt.Sprintf("%d. %s", i, preview)
-
-		// Ensure the line doesn't exceed the available width
-		if len(line) > m.leftWidth-4 { // Account for borders and padding
-			line = line[:m.leftWidth-7] + "..."
-		}
-
-		if i == m.cursor {
-			line = lipgloss.NewStyle().
-				Background(lipgloss.Color("62")).
-				Foreground(lipgloss.Color("230")).
-				Width(m.leftWidth - 4). // Force width constraint
-				Render(line)
-		}
-
-		content.WriteString(line + "\n")
-	}
-
-	return style.Render(content.String())
-}
-
-
-func (m Model) renderRightPane() string {
-	borderColor := "62"
-	if m.focusedPane == 1 {
-		borderColor = "205" // Highlight focused pane
-		if m.searchMode {
-			// show the border in yellow when in search mode
-			borderColor = "220"
-		}
-	}
-
-	style := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(borderColor)).
-		Padding(0, 1).
-		Width(m.rightWidth - 2).
-		Height(m.height - 4)
-
-	var content strings.Builder
-
-	if m.selected < 0 || m.selected >= len(m.items) {
-		content.WriteString(lipgloss.NewStyle().Bold(true).Render("Content") + "\n\n")
-		content.WriteString("Invalid selection")
-	} else {
-		item := m.items[m.selected]
-
-		// Build title with scroll indicator
-		title := fmt.Sprintf("Content [%d]", m.selected)
-		if m.focusedPane == 1 {
-			title = "● " + title // Active indicator
-		}
-
-		// Ensure lines are calculated
-		if len(item.Lines) == 0 {
-			item.UpdateWrappedLines(m.rightWidth - 6)
-		}
-
-		if len(item.Lines) > 0 && m.getMaxScroll(item) > 0 {
-			// Add scroll position indicator
-			totalLines := len(item.Lines)
-			topLine := item.ViewPos + 1
-			bottomLine := min(item.ViewPos+(m.height-6), totalLines)
-			title += fmt.Sprintf(" (%d-%d/%d)", topLine, bottomLine, totalLines)
-		}
-		content.WriteString(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n")
-
-		// Show the visible portion based on view position
-		availableHeight := m.height - 6 // Account for borders and headers
-		startLine := item.ViewPos
-		endLine := min(startLine+availableHeight, len(item.Lines))
-
-		// Create a set of match lines for quick lookup
-		matchLines := make(map[int]bool)
-		for _, matchLine := range item.SearchMatches {
-			matchLines[matchLine] = true
-		}
-
-		for i := startLine; i < endLine; i++ {
-			if i < len(item.Lines) {
-				line := item.Lines[i]
-
-				// Highlight search matches
-				if matchLines[i] && item.SearchPattern != "" {
-					// Compile regex for highlighting
-					if regex, err := regexp.Compile("(?i)" + item.SearchPattern); err == nil {
-						// Find all matches in the line
-						matches := regex.FindAllStringIndex(line, -1)
-						if len(matches) > 0 {
-							var highlightedLine strings.Builder
-							lastEnd := 0
-
-							for _, match := range matches {
-								// Add text before match
-								highlightedLine.WriteString(line[lastEnd:match[0]])
-
-								// Add highlighted match
-								matchText := line[match[0]:match[1]]
-								if i == item.GetCurrentMatchLine() {
-									// Current match - use different highlighting
-									highlightedLine.WriteString(lipgloss.NewStyle().
-										Background(lipgloss.Color("220")).
-										Foreground(lipgloss.Color("0")).
-										Render(matchText))
-								} else {
-									// Other matches
-									highlightedLine.WriteString(lipgloss.NewStyle().
-										Background(lipgloss.Color("11")).
-										Foreground(lipgloss.Color("0")).
-										Render(matchText))
-								}
-
-								lastEnd = match[1]
-							}
-
-							// Add remaining text after last match
-							highlightedLine.WriteString(line[lastEnd:])
-							line = highlightedLine.String()
-						}
-					}
-				}
-
-				content.WriteString(line + "\n")
-			}
-		}
-	}
-
-	return style.Render(content.String())
-}
-
-func (m Model) getMaxScroll(item *StackItem) int {
-	availableHeight := m.height - 6 // Account for borders and headers
-	if len(item.Lines) <= availableHeight {
-		return 0
-	}
-	return len(item.Lines) - availableHeight
-}
 
 // Legacy type alias for backward compatibility
 type QueueItem = StackItem

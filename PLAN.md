@@ -1,268 +1,347 @@
-# rem Project Implementation Plan
+# TUI Elm Architecture Refactoring Plan
 
-## Project Status
+## Current Project Status
+**Feature**: Convert TUI to Elm Architecture
+**Phase**: Planning and Design
+**Goal**: Refactor the existing TUI from a single-file monolithic structure to a clean Elm architecture with explicit Model/Msg/View patterns and sub-components.
 
-**Current State**: **Phase 3 Complete** - Full CLI Interface
-**Next Phase**: **Phase 4** - Polish & Advanced Features
+## Current State Analysis
 
-### Project Metrics (as of Phase 3 completion)
-- **Codebase**: 10 Go files, ~2,143 lines of code
-- **Packages**: 4 internal packages (cli, queue, remfs, tui)
-- **Dependencies**:
-  - CLI: go-arg for argument parsing
-  - TUI: Bubble Tea ecosystem (bubbletea, lipgloss)
-  - Clipboard: golang.design/x/clipboard
-- **Architecture**: LIFO stack with fs.FS abstraction
-- **Storage**: File-based persistence in `~/.config/rem/content/`
-- **Features**: Complete CLI + TUI with clipboard integration
+### Existing Structure
+- **Single File**: All TUI code in `internal/tui/viewer.go` (~762 lines)
+- **Monolithic Model**: Single `Model` struct containing all application state
+- **Ad-hoc Messages**: Uses Bubble Tea's generic `tea.Msg` types with type switches
+- **Scattered State**: Application state split between `Model` and `StackItem` structs
+- **Helper-based Updates**: Update logic split into helper methods that mutate state
 
-## Implementation Phases
+### Current State Issues
+1. **Poor Separation of Concerns**: UI logic, business logic, and state management are mixed
+2. **Difficult Testing**: Large functions make unit testing complex
+3. **Hard to Extend**: Adding new features requires modifying multiple large functions
+4. **No Component Reusability**: UI elements are tightly coupled to main model
 
-### Phase 1: Interactive TUI Foundation (COMPLETED)
-**Goal**: Build a robust dual-pane TUI viewer with pager functionality
+## Target Elm Architecture Design
 
-#### Completed Components:
-- [x] **Dual-pane TUI layout** with responsive sizing
-- [x] **Queue navigation** (left pane) with auto-selection
-- [x] **Content pager** (right pane) with full less-like functionality
-- [x] **Regex search** with highlighting and match navigation
-- [x] **Per-item state tracking** (scroll position, search state)
-- [x] **Stream-based content model** (`io.ReadSeekCloser`)
-- [x] **Text wrapping** and proper truncation
-- [x] **Status line** with search input and feedback
-- [x] **Modular architecture** in `internal/tui/` package
+### Component-Specific Message Types
+Each component handles only messages relevant to its domain:
 
-#### Current Capabilities:
-```bash
-go run main.go    # Launch interactive viewer with 5 dummy items
-# TUI Features: Tab (switch panes), j/k (navigate), /pattern (search), n/N (next/prev match)
+#### App-Level Messages (AppMsg)
+```go
+type AppMsg interface {
+    isAppMsg()
+}
+
+type WindowResizeMsg struct{ Width, Height int }
+type FocusChangeMsg struct{ Pane PaneType }
+type QuitMsg struct{}
+type KeyPressMsg struct{ Key string } // Raw key that needs routing
 ```
 
----
-
-### Phase 2: Core Stack Manager & Storage (COMPLETED)
-**Goal**: Implement persistent stack with file-based storage
-
-#### Completed Components:
-- [x] **Config directory setup** (`~/.config/rem/`) via RemFS abstraction
-- [x] **Stack persistence** with ISO timestamp-based files
-- [x] **Content file management** in `~/.config/rem/content/`
-- [x] **Auto-cleanup** when exceeding 20 items
-- [x] **fs.FS abstraction** for testability (RemFS package)
-- [x] **Stream-based content model** (`io.ReadSeekCloser`)
-- [x] **Metadata extraction** (timestamp, preview generation)
-- [x] **Integration testing** with TUI
-
-#### Implemented Stack Manager API:
+#### Left Pane Messages (LeftPaneMsg)
 ```go
-type StackManager struct {
-    Push(content io.ReadSeekCloser) (*StackItem, error)
-    Get(index int) (*StackItem, error)
-    Size() int
-    List() []*StackItem
-    FileSystem() FileSystem
+type LeftPaneMsg interface {
+    isLeftPaneMsg()
+}
+
+type NavigateUpMsg struct{}
+type NavigateDownMsg struct{}
+type SelectItemMsg struct{ Index int }
+type ResizeLeftPaneMsg struct{ Width, Height int }
+```
+
+#### Right Pane Messages (RightPaneMsg)
+```go
+type RightPaneMsg interface {
+    isRightPaneMsg()
+}
+
+type ScrollUpMsg struct{}
+type ScrollDownMsg struct{}
+type ScrollToTopMsg struct{}
+type ScrollToBottomMsg struct{}
+type PageUpMsg struct{}
+type PageDownMsg struct{}
+type JumpMsg struct{ Direction string; Lines int }
+type ResizeRightPaneMsg struct{ Width, Height int }
+type UpdateContentMsg struct{ Item *StackItem }
+```
+
+#### Search Messages (SearchMsg)
+```go
+type SearchMsg interface {
+    isSearchMsg()
+}
+
+type StartSearchMsg struct{}
+type UpdateSearchInputMsg struct{ Input string }
+type ExecuteSearchMsg struct{}
+type CancelSearchMsg struct{}
+type NextMatchMsg struct{}
+type PrevMatchMsg struct{}
+type ClearSearchMsg struct{}
+```
+
+### Model Structure
+Break down the monolithic model into focused sub-models:
+
+```go
+// Top-level application model
+type AppModel struct {
+    WindowSize    WindowSize
+    ActivePane    PaneType
+    LeftPane      LeftPaneModel
+    RightPane     RightPaneModel
+    Search        SearchModel
+    Items         []*StackItem
+}
+
+// Left pane (item list) model
+type LeftPaneModel struct {
+    Cursor      int
+    Selected    int
+    Width       int
+    Height      int
+}
+
+// Right pane (content viewer) model
+type RightPaneModel struct {
+    Width       int
+    Height      int
+    ViewPos     int
+    Content     *StackItem
+}
+
+// Search functionality model
+type SearchModel struct {
+    Active      bool
+    Input       string
+    Pattern     string
+    Error       string
+    Matches     []int
+    CurrentMatch int
 }
 ```
 
-#### Current Capabilities:
-```bash
-go run ./cmd/demo/           # Add sample content to queue
-go run . view                # Launch TUI with real stack data
-go run ./cmd/test-integration/  # Verify TUI integration
+### Generic Component Interface
+Each component implements a generic interface with its specific message type:
+
+```go
+// Generic component interface
+type Component[M any] interface {
+    View() string
+    Update(M) error
+}
+
+// Component implementations
+type LeftPaneComponent struct {
+    Model LeftPaneModel
+    Items []*StackItem
+}
+
+type RightPaneComponent struct {
+    Model RightPaneModel
+}
+
+type SearchComponent struct {
+    Model SearchModel
+}
+
+// App handles message routing and orchestration
+type AppComponent struct {
+    Model      AppModel
+    LeftPane   LeftPaneComponent
+    RightPane  RightPaneComponent
+    Search     SearchComponent
+}
+
+// AppComponent routes messages to appropriate sub-components
+func (a *AppComponent) Update(msg tea.Msg) error {
+    // Parse tea.Msg into component-specific messages
+    // Route to appropriate component
+}
 ```
 
----
+## Sub-Component Breakdown
 
-### Phase 3: Full CLI Interface (COMPLETED)
-**Goal**: Complete all `rem store` and `rem get` commands
+### 1. Core Components
+- **`AppComponent`**: Top-level orchestrator, handles window events and focus management
+- **`LeftPaneComponent`**: Manages item list navigation and selection
+- **`RightPaneComponent`**: Manages content viewing, scrolling, and display
+- **`SearchComponent`**: Manages search input, execution, and match navigation
 
-#### 3.1 Store Operations
-- [x] **Stdin input**: `rem store` (pipe input)
-- [x] **File input**: `rem store file.txt`
-- [x] **Clipboard input**: `rem store -c`
-- [x] **Input validation** and error handling
-- [x] **Content type detection**
+### 2. File Structure
+Reorganize code into focused files:
 
-#### 3.2 Get Operations
-- [x] **Stdout output**: `rem get N`
-- [x] **Clipboard output**: `rem get -c N`
-- [x] **File output**: `rem get N file.txt`
-- [x] **Interactive viewer**: `rem get` (integrate existing TUI)
-- [x] **Error handling** for invalid indices
-
-#### 3.3 Integration Testing
-```bash
-# Full workflow testing
-echo "test data" | rem store
-rem store ~/.bashrc
-rem store -c
-
-rem get                       # Browse all items
-rem get 0                     # Output first item
-rem get -c 1                  # Copy second item to clipboard
-rem get 2 output.txt         # Save third item to file
+```
+internal/tui/
+├── app.go              # Main AppModel, Update, and View
+├── messages.go         # All message type definitions
+├── leftpane.go         # LeftPaneModel and related functions
+├── rightpane.go        # RightPaneModel and related functions
+├── search.go           # SearchModel and search functionality
+├── components.go       # Shared component interfaces and utilities
+├── styles.go           # Lipgloss styles and theming
+└── utils.go            # Utility functions (wrapText, min, max, etc.)
 ```
 
-**Status**: COMPLETED in Phase 3
+### 3. Component Responsibilities
 
-All Phase 3 functionality has been successfully implemented and tested:
-- Complete CLI interface with go-arg parsing
-- LIFO stack behavior with newest items at index 0
-- Full store/get operations with stdin, file, and clipboard support
-- Integration with existing TUI for interactive viewing
-- Comprehensive error handling and validation
-- Clean output without emojis
+#### AppComponent
+- Window size management
+- Focus management between panes
+- Message routing to sub-components
+- Overall layout orchestration
 
----
+#### LeftPaneComponent
+- Item navigation (up/down/select)
+- Visual selection highlighting
+- Item preview rendering
+- Focus visual indicators
 
-### Phase 4: Polish & Advanced Features
-**Goal**: Production-ready features and user experience
+#### RightPaneComponent
+- Content scrolling (line-by-line, page, jump)
+- Content rendering with line wrapping
+- Search result highlighting
+- Scroll position indicators
 
-#### 4.1 Configuration System
-- [ ] **Config file** (`~/.config/rem/config.toml`)
-- [ ] **Stack size limits** (default 20 items)
-- [ ] **Content size limits**
-- [ ] **Auto-cleanup policies**
+#### SearchComponent
+- Search input handling
+- Pattern compilation and validation
+- Match finding and navigation
+- Search result visualization
 
-#### 4.2 Enhanced TUI Features
-- [ ] **Item deletion** from queue
-- [ ] **Copy operations** within TUI
-- [ ] **Multiple selection** support
-- [ ] **Export operations**
-- [ ] **Themes and customization**
+## Incremental Implementation Plan
 
-#### 4.3 Advanced Content Handling
-- [ ] **Binary content** detection and handling
-- [ ] **Image preview** support
-- [ ] **Syntax highlighting** for code content
-- [ ] **Large file** handling optimizations
+### Phase 1: Search Component (Standalone)
+**Why First**: Self-contained, minimal dependencies, clear boundaries
+**Deliverables**:
+- `search.go` - SearchModel, SearchMsg types, and SearchComponent
+- `search_test.go` - Unit tests for search functionality
+- Test integration with existing StackItem search methods
 
-#### 4.4 Quality & Distribution
-- [ ] **Comprehensive tests** (unit, integration, TUI)
-- [ ] **Documentation** (man page, --help, examples)
-- [ ] **Installation scripts**
-- [ ] **CI/CD pipeline**
-- [ ] **Release packaging**
+**Implementation Steps**:
+1. Create SearchMsg interface and message types
+2. Create SearchModel struct
+3. Implement SearchComponent with Update/View methods
+4. Write comprehensive unit tests
+5. Run `go test ./internal/tui` to ensure no regressions
 
-**Estimated Time**: 2-3 weeks
+### Phase 2: Left Pane Component
+**Why Second**: Simple navigation logic, depends only on item list
+**Deliverables**:
+- `leftpane.go` - LeftPaneModel, LeftPaneMsg types, and LeftPaneComponent
+- `leftpane_test.go` - Navigation and selection tests
+- Integration with StackItem list
 
----
+**Implementation Steps**:
+1. Create LeftPaneMsg interface and message types
+2. Create LeftPaneModel struct
+3. Implement LeftPaneComponent with Update/View methods
+4. Write unit tests for navigation boundaries and selection
+5. Run `go test ./internal/tui` to ensure functionality
 
-## Technical Milestones
+### Phase 3: Right Pane Component
+**Why Third**: More complex scrolling logic, depends on SearchComponent
+**Deliverables**:
+- `rightpane.go` - RightPaneModel, RightPaneMsg types, and RightPaneComponent
+- `rightpane_test.go` - Scrolling, content display, and search integration tests
+- Integration with SearchComponent for highlighting
 
-### Milestone 1: Working TUI (DONE)
-- Interactive dual-pane viewer
-- Search functionality
-- Stream-based architecture
-- Clean code organization
+**Implementation Steps**:
+1. Create RightPaneMsg interface and message types
+2. Create RightPaneModel struct
+3. Implement RightPaneComponent with Update/View methods
+4. Integrate with SearchComponent for match highlighting
+5. Write tests for scrolling boundaries and content rendering
+6. Run `go test ./internal/tui` to verify all components work
 
-### Milestone 2: Core Storage System (DONE)
-- File-based stack persistence
-- fs.FS abstraction for testability
-- ISO timestamp-based content files
-- Auto-cleanup and size management
-- Full TUI integration with real data
+### Phase 4: App Component Integration
+**Why Last**: Orchestrates all sub-components, message routing complexity
+**Deliverables**:
+- `app.go` - AppModel, AppMsg types, AppComponent, and message routing
+- `app_test.go` - Integration tests for component interactions
+- Updated main `viewer.go` to use new AppComponent
 
-### Milestone 3: MVP CLI Tool (COMPLETED)
-- Basic store/get operations
-- Clipboard integration
-- **Target**: Usable daily clipboard manager
+**Implementation Steps**:
+1. Create AppMsg interface and routing message types
+2. Create AppComponent that wraps all sub-components
+3. Implement message routing from `tea.Msg` to component-specific messages
+4. Update main Update/View methods to delegate to AppComponent
+5. Write integration tests for focus changes and message routing
+6. Run full test suite to ensure complete functionality
 
-### Milestone 4: Production Release
-- Full CLI interface
-- Robust error handling
-- Documentation and tests
-- **Target**: Public release ready
+### Phase 5: Legacy Compatibility & Cleanup
+**Deliverables**:
+- Maintain existing public API for backward compatibility
+- Remove old monolithic code from `viewer.go`
+- Update package documentation and examples
 
-### Milestone 5: Advanced Features
-- Enhanced UX and power features
-- Extended content support
-- Integration ecosystem
+**Implementation Steps**:
+1. Ensure `NewModel()` and existing APIs still work
+2. Remove unused code from `viewer.go`
+3. Update imports and clean up file structure
+4. Run full test suite including existing integration tests
+5. Performance verification - no regressions
 
----
+## Testing Strategy
 
-## Development Priorities
+### Unit Tests
+- **Message Handling**: Test each update function with specific message types
+- **Model State**: Test model initialization, validation, and state consistency
+- **View Rendering**: Test component view functions with different model states
+- **Search Logic**: Test search pattern compilation, matching, and navigation
 
-### High Priority (Must Have)
-1. **Stack persistence** - Core functionality
-2. **Basic store/get operations** - MVP requirement
-3. **Clipboard integration** - Essential for daily use
-4. **Error handling** - Reliability and user experience
+### Integration Tests
+- **Pane Interactions**: Test focus changes and message routing between panes
+- **Search Integration**: Test end-to-end search workflow across components
+- **Window Resize**: Test layout recalculation and content rewrapping
 
-### Medium Priority (Should Have)
-1. **Configuration system** - Customization and limits
-2. **Advanced TUI features** - Enhanced usability
-3. **Content type handling** - Better user experience
-4. **Documentation** - Adoption and maintenance
+### Property-Based Tests
+- **Navigation Bounds**: Test navigation doesn't exceed item list boundaries
+- **Scroll Bounds**: Test scrolling doesn't exceed content boundaries
+- **Search Consistency**: Test search results are consistent across operations
 
-### Low Priority (Nice to Have)
-1. **Binary content support** - Niche use cases
-2. **Syntax highlighting** - Visual enhancement
-3. **Network integration** - Advanced workflows
-4. **Plugin system** - Extensibility
+## Success Criteria
 
----
+### Functional Requirements
+- [ ] All existing TUI functionality works identically
+- [ ] No regression in user experience or performance
+- [ ] All keyboard shortcuts and interactions preserved
 
-## Risk Assessment & Mitigation
+### Code Quality Requirements
+- [ ] Explicit message types for all user actions
+- [ ] Pure update functions (no in-place mutation)
+- [ ] Component-based view architecture
+- [ ] <100 lines per file (focused responsibility)
+- [ ] >90% test coverage on business logic
+
+### Maintainability Requirements
+- [ ] Easy to add new features (new message types, components)
+- [ ] Clear separation between UI, business logic, and state
+- [ ] Self-documenting code structure and interfaces
+- [ ] Consistent error handling and validation patterns
+
+## Next Steps
+
+1. **Start Phase 1**: Begin with message type definitions in `messages.go`
+2. **Create Branch**: Create feature branch `feat/elm-architecture-refactor`
+3. **Incremental Implementation**: Implement each phase with working code at every step
+4. **Continuous Testing**: Run existing tests after each phase to ensure no regressions
+5. **Documentation**: Update ARCHITECTURE.md as components are implemented
+
+## Risk Mitigation
 
 ### Technical Risks
-1. **Clipboard Integration Complexity**
-   - **Risk**: Platform-specific clipboard APIs
-   - **Mitigation**: Use proven Go libraries (like `golang.design/x/clipboard`)
+- **Breaking Changes**: Maintain backward compatibility through incremental refactoring
+- **Performance Impact**: Profile rendering performance before and after changes
+- **Test Coverage**: Ensure existing tests pass throughout refactoring
 
-2. **File System Permissions**
-   - **Risk**: Config directory access issues
-   - **Mitigation**: Graceful fallback, clear error messages
-
-3. **Memory Usage with Large Content**
-   - **Risk**: Loading large files into memory
-   - **Mitigation**: Stream-based architecture already in place
-
-### Product Risks
-1. **User Adoption**
-   - **Risk**: Complex interface for simple clipboard needs
-   - **Mitigation**: Focus on intuitive defaults, extensive documentation
-
-2. **Platform Compatibility**
-   - **Risk**: macOS/Linux/Windows differences
-   - **Mitigation**: Start with macOS, expand iteratively
+### Timeline Risks
+- **Scope Creep**: Focus strictly on refactoring, not new features
+- **Complexity**: Break work into small, reviewable chunks
+- **Integration**: Test component interactions early and often
 
 ---
 
-## Success Metrics
-
-### Phase 2 Success Criteria (COMPLETED)
-- [x] Persistent stack survives application restart
-- [x] TUI displays real stored content (not dummy data)
-- [x] fs.FS abstraction enables clean testing
-- [x] Auto-cleanup maintains stack size limits
-
-### Phase 3 Success Criteria (COMPLETED)
-- [x] Complete CLI interface matches specification
-- [x] Can replace basic pbcopy/pbpaste workflows
-- [x] Error handling covers common edge cases
-- [x] Performance suitable for daily use
-
-### Overall Project Success
-- [ ] Daily usable clipboard manager
-- [ ] Superior to basic clipboard tools
-- [ ] Extensible architecture for future features
-- [ ] Clean, maintainable codebase
-
----
-
-## Next Steps (Immediate Actions)
-
-### Phase 3: CLI Commands (COMPLETED)
-1. **Implemented `rem store` command with stdin/file/clipboard input**
-2. **Added `rem get N` for stdout output operations**
-3. **Integrated clipboard support**
-4. **Command-line argument parsing and validation**
-
-### Next Phase: Polish & Advanced Features (Phase 4)
-1. **Configuration system** - Stack size limits and preferences
-2. **Enhanced TUI features** - Item deletion, copy operations, themes
-3. **Advanced content handling** - Binary content, syntax highlighting
-4. **Quality & distribution** - Comprehensive tests, documentation, CI/CD
-
-This plan provides a clear roadmap from the current TUI foundation to a complete, production-ready clipboard manager.
+**Last Updated**: 2025-09-28
+**Status**: Planning Complete, Ready for Implementation
