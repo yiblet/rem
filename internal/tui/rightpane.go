@@ -136,7 +136,7 @@ func RightPaneView(model RightPaneModel, content *StackItem, searchModel SearchM
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(borderColor)).
 		Padding(0, 1).
-		Width(model.Width - 2).
+		Width(model.Width).
 		Height(model.Height - 4)
 
 	var contentBuilder strings.Builder

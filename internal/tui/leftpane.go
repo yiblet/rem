@@ -29,6 +29,23 @@ type SelectItemMsg struct {
 
 func (SelectItemMsg) isLeftPaneMsg() {}
 
+type GoToTopMsg struct{}
+
+func (GoToTopMsg) isLeftPaneMsg() {}
+
+type GoToBottomMsg struct {
+	MaxIndex int
+}
+
+func (GoToBottomMsg) isLeftPaneMsg() {}
+
+type JumpToIndexMsg struct {
+	Index    int
+	MaxIndex int
+}
+
+func (JumpToIndexMsg) isLeftPaneMsg() {}
+
 type ResizeLeftPaneMsg struct {
 	Width  int
 	Height int
@@ -66,6 +83,19 @@ func (l *LeftPaneModel) Update(msg LeftPaneMsg) error {
 		if l.Cursor < m.MaxIndex {
 			l.Cursor++
 			l.Selected = l.Cursor
+		}
+	case GoToTopMsg:
+		l.Cursor = 0
+		l.Selected = 0
+	case GoToBottomMsg:
+		if m.MaxIndex >= 0 {
+			l.Cursor = m.MaxIndex
+			l.Selected = m.MaxIndex
+		}
+	case JumpToIndexMsg:
+		if m.Index >= 0 && m.Index <= m.MaxIndex {
+			l.Cursor = m.Index
+			l.Selected = m.Index
 		}
 	case SelectItemMsg:
 		// Validate index bounds - parent component will validate against item count

@@ -2,7 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,22 +60,28 @@ type AppModel struct {
 	RightPane  RightPaneModel
 	Search     SearchModel
 	Items      []*StackItem
+
+	// Number input mode for multi-digit commands like "10j"
+	NumberBuffer string   // Accumulates digits
+	BufferPane   PaneType // Which pane the buffer applies to
 }
 
 // NewAppModel creates a new app model with all sub-models
 func NewAppModel(items []*StackItem) AppModel {
-	leftWidth := 25
-	rightWidth := 90
-	height := 20
+	// Default dimensions that will be properly set on first resize
+	defaultWidth := 120
+	defaultHeight := 20
+	defaultLeftWidth := 25
+	defaultRightWidth := 90
 
 	return AppModel{
-		Width:      120,
-		Height:     height,
-		LeftWidth:  leftWidth,
-		RightWidth: rightWidth,
+		Width:      defaultWidth,
+		Height:     defaultHeight,
+		LeftWidth:  defaultLeftWidth,
+		RightWidth: defaultRightWidth,
 		ActivePane: LeftPane,
-		LeftPane:   NewLeftPaneModel(leftWidth, height),
-		RightPane:  NewRightPaneModel(rightWidth, height),
+		LeftPane:   NewLeftPaneModel(defaultLeftWidth, defaultHeight),
+		RightPane:  NewRightPaneModel(defaultRightWidth, defaultHeight),
 		Search:     NewSearchModel(),
 		Items:      items,
 	}
@@ -98,9 +104,38 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a *AppModel) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	a.Width = msg.Width
 	a.Height = msg.Height
-	a.RightWidth = msg.Width - a.LeftWidth - 3 // Account for borders and spacing
-	if a.RightWidth < 20 {
-		a.RightWidth = 20
+
+	// Ensure minimum total width of 30 characters
+	minTotalWidth := 30
+	if msg.Width < minTotalWidth {
+		a.Width = minTotalWidth
+	}
+
+	// Calculate pane widths with proper constraints
+	minLeftWidth := 15
+	minRightWidth := 20
+	borderSpacing := 3
+
+	// If total width is too small, split proportionally
+	if a.Width < minLeftWidth + minRightWidth + borderSpacing {
+		// Very narrow - give each pane minimum space
+		a.LeftWidth = minLeftWidth
+		a.RightWidth = max(a.Width - a.LeftWidth - borderSpacing, minRightWidth)
+	} else {
+		// Normal case - use preferred left width, rest goes to right
+		preferredLeftWidth := 25
+		a.LeftWidth = min(preferredLeftWidth, a.Width/3) // Don't take more than 1/3
+		a.RightWidth = a.Width - a.LeftWidth - borderSpacing
+
+		// Ensure minimums are respected
+		if a.LeftWidth < minLeftWidth {
+			a.LeftWidth = minLeftWidth
+			a.RightWidth = a.Width - a.LeftWidth - borderSpacing
+		}
+		if a.RightWidth < minRightWidth {
+			a.RightWidth = minRightWidth
+			a.LeftWidth = a.Width - a.RightWidth - borderSpacing
+		}
 	}
 
 	// Update sub-models
@@ -143,7 +178,31 @@ func (a *AppModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleSearchModeKeys(key)
 	}
 
-	// Route keys based on active pane
+	// Handle number mode input
+	if newBuffer, handled := handleNumberMode(a.NumberBuffer, a.BufferPane, a.ActivePane, key); handled {
+		a.NumberBuffer = newBuffer
+		if a.NumberBuffer != "" {
+			a.BufferPane = a.ActivePane
+		}
+		return a, nil
+	}
+
+	// Get multiplier and clear buffer if we have one
+	multiplier := 1
+	if a.NumberBuffer != "" && a.BufferPane == a.ActivePane {
+		if num, err := strconv.Atoi(a.NumberBuffer); err == nil {
+			multiplier = num
+		}
+		a.NumberBuffer = ""
+	}
+
+	// Check if this is a movement command that should use the multiplier
+	if isMovementCommand(key) {
+		return a.executeCommand(multiplier, key, a.ActivePane)
+	}
+
+	// Clear buffer for non-movement keys and route to pane-specific handlers
+	a.NumberBuffer = ""
 	switch a.ActivePane {
 	case LeftPane:
 		return a.handleLeftPaneKeys(key)
@@ -197,16 +256,10 @@ func (a *AppModel) handleSearchModeKeys(key string) (tea.Model, tea.Cmd) {
 
 // handleLeftPaneKeys processes keys when left pane is focused
 func (a *AppModel) handleLeftPaneKeys(key string) (tea.Model, tea.Cmd) {
+	// Only handle non-movement keys here, movement keys are handled by executeCommand
 	switch key {
-	case "up", "k":
-		a.LeftPane.Update(NavigateUpMsg{})
-		// Reset right pane view position when selection changes
-		a.RightPane.Update(UpdateContentMsg{})
-	case "down", "j":
-		maxIndex := len(a.Items) - 1
-		a.LeftPane.Update(NavigateDownMsg{MaxIndex: maxIndex})
-		// Reset right pane view position when selection changes
-		a.RightPane.Update(UpdateContentMsg{})
+	default:
+		// Handle other left pane specific keys here if needed in the future
 	}
 
 	return a, nil
@@ -214,7 +267,6 @@ func (a *AppModel) handleLeftPaneKeys(key string) (tea.Model, tea.Cmd) {
 
 // handleRightPaneKeys processes keys when right pane is focused
 func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
-	// Calculate max scroll for current content
 	var maxScroll int
 	if a.LeftPane.Selected < len(a.Items) {
 		selectedItem := a.Items[a.LeftPane.Selected]
@@ -223,10 +275,8 @@ func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "/", "?":
-		// Start search mode
 		a.Search.Update(StartSearchMsg{})
 	case "n":
-		// Next search match
 		if a.Search.HasMatches() {
 			a.Search.Update(NextMatchMsg{})
 			if matchLine := a.Search.GetCurrentMatchLine(); matchLine >= 0 && a.LeftPane.Selected < len(a.Items) {
@@ -236,7 +286,6 @@ func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "N":
-		// Previous search match
 		if a.Search.HasMatches() {
 			a.Search.Update(PrevMatchMsg{})
 			if matchLine := a.Search.GetCurrentMatchLine(); matchLine >= 0 && a.LeftPane.Selected < len(a.Items) {
@@ -245,34 +294,16 @@ func (a *AppModel) handleRightPaneKeys(key string) (tea.Model, tea.Cmd) {
 				a.RightPane.ViewPos = newViewPos
 			}
 		}
-	case "up", "k":
-		a.RightPane.Update(ScrollUpMsg{})
-	case "down", "j":
-		a.RightPane.Update(ScrollDownMsg{MaxScroll: maxScroll})
-	case "g":
-		a.RightPane.Update(ScrollToTopMsg{})
-	case "G":
-		a.RightPane.Update(ScrollToBottomMsg{MaxScroll: maxScroll})
 	case "ctrl+u":
 		a.RightPane.Update(PageUpMsg{})
 	case "ctrl+d":
 		a.RightPane.Update(PageDownMsg{MaxScroll: maxScroll})
 	case "ctrl+b":
-		// Full page up
 		pageSize := a.Height - 6
 		a.RightPane.Update(JumpMsg{Direction: "k", Lines: pageSize, MaxScroll: maxScroll})
 	case "ctrl+f":
-		// Full page down
 		pageSize := a.Height - 6
 		a.RightPane.Update(JumpMsg{Direction: "j", Lines: pageSize, MaxScroll: maxScroll})
-	default:
-		// Handle number prefixes (e.g., "10j", "5k")
-		if matched, _ := regexp.MatchString(`^\d+[jk]$`, key); matched {
-			direction, lines, err := parseJumpCommand(key)
-			if err == nil {
-				a.RightPane.Update(JumpMsg{Direction: direction, Lines: lines, MaxScroll: maxScroll})
-			}
-		}
 	}
 
 	return a, nil
@@ -352,7 +383,10 @@ func (a *AppModel) View() string {
 func renderStatusLine(model AppModel) string {
 	var statusLine string
 
-	if model.Search.IsActive() {
+	if model.NumberBuffer != "" {
+		// Show number buffer input
+		statusLine = fmt.Sprintf("%s", model.NumberBuffer)
+	} else if model.Search.IsActive() {
 		// Show search input with cursor
 		statusLine = fmt.Sprintf("/%s", model.Search.GetInput())
 		if model.Search.GetError() != "" {
@@ -367,7 +401,7 @@ func renderStatusLine(model AppModel) string {
 	} else {
 		// Show help text
 		if model.ActivePane == LeftPane {
-			statusLine = "Left Pane: ↑/k ↓/j (navigate & view) Tab (switch) q (quit)"
+			statusLine = "Left Pane: ↑/k ↓/j (navigate) g/G (top/bottom) ##/##j/##k (jump) Tab (switch) q (quit)"
 		} else {
 			statusLine = "Right Pane: ↑/k ↓/j (scroll) / (search) n/N (next/prev) g/G (top/bottom) ##j/##k (jump) q (quit)"
 		}
@@ -377,6 +411,89 @@ func renderStatusLine(model AppModel) string {
 		Width(model.Width)
 
 	return statusStyle.Render(statusLine)
+}
+
+// handleNumberMode processes digit input and backspace for vim-style number prefixes
+func handleNumberMode(currentBuffer string, targetPane PaneType, activePane PaneType, key string) (newBuffer string, handled bool) {
+	// Handle digit input
+	if key >= "0" && key <= "9" {
+		return currentBuffer + key, true
+	}
+
+	// Handle backspace in number mode
+	if key == "backspace" && currentBuffer != "" {
+		if len(currentBuffer) > 1 {
+			return currentBuffer[:len(currentBuffer)-1], true
+		}
+		return "", true
+	}
+
+	return currentBuffer, false
+}
+
+// isMovementCommand checks if a key is a movement command that can use multipliers
+func isMovementCommand(key string) bool {
+	switch key {
+	case "up", "k", "down", "j", "g", "G":
+		return true
+	}
+	return false
+}
+
+// executeCommand executes a command with a number multiplier on the specified pane
+func (a *AppModel) executeCommand(multiplier int, key string, pane PaneType) (tea.Model, tea.Cmd) {
+	maxIndex := len(a.Items) - 1
+
+	if pane == LeftPane {
+		switch key {
+		case "up", "k":
+			newCursor := max(a.LeftPane.Cursor-multiplier, 0)
+			a.LeftPane.Update(JumpToIndexMsg{Index: newCursor, MaxIndex: maxIndex})
+			a.RightPane.Update(UpdateContentMsg{})
+		case "down", "j":
+			newCursor := min(a.LeftPane.Cursor+multiplier, maxIndex)
+			a.LeftPane.Update(JumpToIndexMsg{Index: newCursor, MaxIndex: maxIndex})
+			a.RightPane.Update(UpdateContentMsg{})
+		case "g":
+			if multiplier > 1 {
+				jumpIndex := min(max(multiplier-1, 0), maxIndex)
+				a.LeftPane.Update(JumpToIndexMsg{Index: jumpIndex, MaxIndex: maxIndex})
+			} else {
+				a.LeftPane.Update(GoToTopMsg{})
+			}
+			a.RightPane.Update(UpdateContentMsg{})
+		case "G":
+			a.LeftPane.Update(GoToBottomMsg{MaxIndex: maxIndex})
+			a.RightPane.Update(UpdateContentMsg{})
+		}
+	} else { // RightPane
+		var maxScroll int
+		if a.LeftPane.Selected < len(a.Items) {
+			selectedItem := a.Items[a.LeftPane.Selected]
+			maxScroll = getMaxScroll(a.RightPane, selectedItem)
+		}
+
+		switch key {
+		case "up", "k":
+			a.RightPane.Update(JumpMsg{Direction: "k", Lines: multiplier, MaxScroll: maxScroll})
+		case "down", "j":
+			a.RightPane.Update(JumpMsg{Direction: "j", Lines: multiplier, MaxScroll: maxScroll})
+		case "g":
+			if multiplier > 1 {
+				newViewPos := max(multiplier-1, 0)
+				if newViewPos > maxScroll {
+					newViewPos = maxScroll
+				}
+				a.RightPane.ViewPos = newViewPos
+			} else {
+				a.RightPane.Update(ScrollToTopMsg{})
+			}
+		case "G":
+			a.RightPane.Update(ScrollToBottomMsg{MaxScroll: maxScroll})
+		}
+	}
+
+	return a, nil
 }
 
 // SetItems updates the items list in the app model
