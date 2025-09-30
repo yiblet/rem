@@ -1318,3 +1318,55 @@ func TestAppModel_FlashMessagePriority(t *testing.T) {
 		t.Error("Search status should not be shown when flash message is active")
 	}
 }
+
+func TestAppModel_DeleteModalRendering(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Item 0"), Preview: "Item 0"},
+		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
+	}
+
+	model := NewAppModel(items)
+	model.Width = 120
+	model.Height = 20
+	model.ActivePane = LeftPane
+	model.CurrentMode = DeleteMode
+
+	// Activate the delete modal (simulating pressing 'd')
+	model.Modal.Update(ShowDeleteConfirmation("Item 0", 0))
+
+	// Render the app view with delete modal
+	view, err := AppView(model)
+	if err != nil {
+		t.Fatalf("Error rendering delete modal view: %v", err)
+	}
+
+	// Should contain the delete modal content
+	if !strings.Contains(view, "Delete Item?") {
+		t.Error("Expected delete modal to contain 'Delete Item?'")
+	}
+
+	// Should contain the item preview
+	if !strings.Contains(view, "Item 0") {
+		t.Error("Expected delete modal to show item preview")
+	}
+
+	// Should contain the confirmation options
+	if !strings.Contains(view, "[Y] Yes, delete") {
+		t.Error("Expected delete modal to contain confirmation options")
+	}
+
+	// Check that the view doesn't have excessive width (no cropping issues)
+	// And check that line count matches expected (important for modal rendering)
+	lines := strings.Split(view, "\n")
+
+	// Render normal view to compare line counts
+	model.Modal.Update(HideModalMsg{})
+	model.CurrentMode = NormalMode
+	normalView, _ := AppView(model)
+	normalLines := strings.Split(normalView, "\n")
+
+	// Delete modal should have same line count as normal view
+	if len(lines) != len(normalLines) {
+		t.Errorf("Delete modal has %d lines, expected %d (same as normal view)", len(lines), len(normalLines))
+	}
+}

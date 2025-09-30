@@ -76,6 +76,7 @@ type AppModel struct {
 	LeftPane  LeftPaneModel
 	RightPane RightPaneModel
 	Search    SearchModel
+	Modal     ModalModel
 	Items     []*StackItem
 
 	// Number input mode for multi-digit commands like "10j"
@@ -105,6 +106,7 @@ func NewAppModel(items []*StackItem) AppModel {
 		LeftPane:    NewLeftPaneModel(defaultLeftWidth, defaultHeight),
 		RightPane:   NewRightPaneModel(defaultRightWidth, defaultHeight),
 		Search:      NewSearchModel(),
+		Modal:       NewModalModel(),
 		Items:       items,
 	}
 }
@@ -336,11 +338,13 @@ func (a *AppModel) handleDeleteModeKeys(key string) (tea.Model, tea.Cmd) {
 			a.RightPane.Update(UpdateContentMsg{})
 		}
 
-		// Return to normal mode
+		// Hide modal and return to normal mode
+		a.Modal.Update(HideModalMsg{})
 		a.CurrentMode = NormalMode
 		return a, nil
 	case "n", "N", "esc":
-		// Cancel deletion
+		// Cancel deletion - hide modal and return to normal mode
+		a.Modal.Update(HideModalMsg{})
 		a.CurrentMode = NormalMode
 		return a, nil
 	default:
@@ -425,6 +429,9 @@ func (a *AppModel) handleLeftPaneKeys(key string) (tea.Model, tea.Cmd) {
 		// Enter delete confirmation mode if there are items
 		if len(a.Items) > 0 && a.LeftPane.Selected < len(a.Items) {
 			a.CurrentMode = DeleteMode
+			// Show the delete confirmation modal
+			selectedItem := a.Items[a.LeftPane.Selected]
+			a.Modal.Update(ShowDeleteConfirmation(selectedItem.Preview, a.LeftPane.Selected))
 		}
 		return a, nil
 	default:
@@ -508,15 +515,15 @@ func AppView(model AppModel) (string, error) {
 		return helpView + "\n\n" + renderStatusLine(model), nil
 	}
 
-	// Render normal view first (this will be the background for delete modal)
+	// Render normal view first (this will be the background for modal)
 	normalView, err := renderNormalView(model)
 	if err != nil {
 		return "", err
 	}
 
-	// Overlay delete modal if in delete mode
-	if model.CurrentMode == DeleteMode {
-		return renderDeleteModal(model, normalView), nil
+	// Overlay modal if active (for delete confirmation, etc.)
+	if model.Modal.Active {
+		return ModalView(model.Modal, normalView, model.Width, model.Height), nil
 	}
 
 	return normalView, nil
@@ -680,101 +687,6 @@ Press z again to return to normal view.`
 		Height(model.Height - 4)
 
 	return helpStyle.Render(helpContent)
-}
-
-// renderDeleteModal renders the delete confirmation modal overlaid on the normal view
-func renderDeleteModal(model AppModel, backgroundView string) string {
-	// Get the preview of the item being deleted
-	var itemPreview string
-	if model.LeftPane.Selected < len(model.Items) {
-		itemPreview = model.Items[model.LeftPane.Selected].Preview
-	} else {
-		itemPreview = "Unknown item"
-	}
-
-	// Create modal content
-	modalContent := fmt.Sprintf(`Delete Item?
-
-Item: %s
-Index: %d
-
-Are you sure you want to delete this item?
-
-[Y] Yes, delete    [N] No, cancel`, itemPreview, model.LeftPane.Selected)
-
-	// Calculate modal dimensions
-	modalWidth := 60
-	modalHeight := 10
-
-	// Ensure modal fits within window
-	if modalWidth > model.Width-4 {
-		modalWidth = model.Width - 4
-	}
-	if modalHeight > model.Height-4 {
-		modalHeight = model.Height - 4
-	}
-
-	// Create modal style with border
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("9")). // Bright red border
-		Padding(1, 2).
-		Width(modalWidth).
-		Height(modalHeight).
-		Align(lipgloss.Center, lipgloss.Center)
-
-	modal := modalStyle.Render(modalContent)
-
-	// Split background and modal into lines
-	backgroundLines := strings.Split(backgroundView, "\n")
-	modalLines := strings.Split(modal, "\n")
-
-	// Calculate position to center the modal
-	modalStartY := (model.Height - len(modalLines)) / 2
-	modalStartX := (model.Width - lipgloss.Width(modalLines[0])) / 2
-
-	if modalStartY < 0 {
-		modalStartY = 0
-	}
-	if modalStartX < 0 {
-		modalStartX = 0
-	}
-
-	// Overlay modal on background
-	var result strings.Builder
-	for i := 0; i < len(backgroundLines); i++ {
-		bgLine := backgroundLines[i]
-
-		// Check if this line should have modal overlay
-		modalLineIdx := i - modalStartY
-		if modalLineIdx >= 0 && modalLineIdx < len(modalLines) {
-			modalLine := modalLines[modalLineIdx]
-
-			// Overlay modal line on background line
-			if modalStartX+len(modalLine) <= len(bgLine) {
-				// Modal fits within background line
-				result.WriteString(bgLine[:modalStartX])
-				result.WriteString(modalLine)
-				if modalStartX+len(modalLine) < len(bgLine) {
-					result.WriteString(bgLine[modalStartX+len(modalLine):])
-				}
-			} else {
-				// Modal extends beyond background, pad as needed
-				if modalStartX < len(bgLine) {
-					result.WriteString(bgLine[:modalStartX])
-				} else {
-					result.WriteString(bgLine)
-					result.WriteString(strings.Repeat(" ", modalStartX-len(bgLine)))
-				}
-				result.WriteString(modalLine)
-			}
-		} else {
-			result.WriteString(bgLine)
-		}
-		result.WriteString("\n")
-	}
-
-	return result.String()
 }
 
 // handleNumberMode processes digit input and backspace for vim-style number prefixes
