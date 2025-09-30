@@ -394,44 +394,49 @@ func (c *CLI) executeSearch(cmd *SearchCmd) error {
 	}
 
 	// Search for pattern in items
-	matches, err := c.stackManager.Search(cmd.Pattern)
-	if err != nil {
-		return fmt.Errorf("failed to search: %w", err)
+	matches := c.stackManager.SearchIter(cmd.Pattern)
+	matchCount := 0
+	for match := range matches.Iter() {
+		i := matchCount
+		matchCount++
+
+		if cmd.IndexOnly {
+			fmt.Printf("%d\n", match.Index)
+		} else {
+			err := func() error {
+				if i > 0 {
+					fmt.Println()
+				}
+				reader, err := match.Item.GetContentReader(c.filesystem)
+				if err != nil {
+					return fmt.Errorf("failed to read content for match %d: %w", i, err)
+				}
+				defer reader.Close()
+				if _, err := io.Copy(os.Stdout, reader); err != nil {
+					return fmt.Errorf("failed to write content for match %d: %w", i, err)
+				}
+
+				return nil
+			}()
+
+			if err != nil {
+				return err
+			}
+
+		}
+
+		if !cmd.AllMatches {
+			break
+		}
+	}
+	if matches.Err() != nil {
+		return matches.Err()
 	}
 
-	if len(matches) == 0 {
+	if matchCount == 0 {
 		return fmt.Errorf("no matches found for pattern: %s", cmd.Pattern)
 	}
 
-	// Handle different output modes
-	if cmd.IndexOnly {
-		// Output only the index of the first match
-		fmt.Printf("%d\n", matches[0].Index)
-		return nil
-	}
-
-	if cmd.AllMatches {
-		// Show all matches
-		for _, match := range matches {
-			fmt.Printf("Index %d: %s\n", match.Index, match.Item.Preview)
-		}
-		return nil
-	}
-
-	// Default: output content of first match
-	firstMatch := matches[0]
-	reader, err := firstMatch.Item.GetContentReader(c.filesystem)
-	if err != nil {
-		return fmt.Errorf("failed to read content: %w", err)
-	}
-	defer reader.Close()
-
-	content, err := io.ReadAll(reader)
-	if err != nil {
-		return fmt.Errorf("failed to read content: %w", err)
-	}
-
-	_, err = os.Stdout.Write(content)
 	return err
 }
 

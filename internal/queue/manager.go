@@ -1,11 +1,13 @@
 package queue
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"regexp"
 	"sort"
 	"strings"
@@ -461,44 +463,86 @@ type SearchResult struct {
 }
 
 // Search searches for items matching the given regex pattern
-func (qm *QueueManager) Search(pattern string) ([]*SearchResult, error) {
-	// Compile the regex pattern
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+func (qm *QueueManager) SearchIter(pattern string) *IterError[SearchResult] {
+	newIter := func(outerErr *error) iter.Seq[SearchResult] {
+		return func(yield func(SearchResult) bool) {
+			// Compile the regex pattern
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				*outerErr = fmt.Errorf("invalid regex pattern: %w", err)
+				return
+			}
+
+			// Get all items from the queue
+			items, err := qm.List()
+			if err != nil {
+				*outerErr = fmt.Errorf("failed to list items: %w", err)
+				return
+			}
+
+			// Search through each item
+			for i, item := range items {
+				res, ok := func() (SearchResult, bool) {
+					// Open the file to read its content
+					file, err := qm.fs.Open(item.FilePath)
+					if err != nil {
+						return SearchResult{}, false
+					}
+					defer file.Close()
+					buf := bufio.NewReader(file)
+					// Check if the content matches the pattern
+					if re.MatchReader(buf) {
+						return SearchResult{
+							Index: i,
+							Item:  item,
+						}, true
+					}
+
+					return SearchResult{}, false
+				}()
+				if ok {
+					if !yield(res) {
+						return
+					}
+				}
+			}
+		}
 	}
 
-	// Get all items from the queue
-	items, err := qm.List()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list items: %w", err)
+	return newIterError(newIter)
+}
+
+// Search searches for items matching the given regex pattern
+func (qm *QueueManager) Search(pattern string) ([]SearchResult, error) {
+	iter := qm.SearchIter(pattern)
+
+	res := []SearchResult{}
+	for result := range iter.Iter() {
+		res = append(res, result)
 	}
 
-	var results []*SearchResult
-
-	// Search through each item
-	for i, item := range items {
-		// Open the file to read its content
-		file, err := qm.fs.Open(item.FilePath)
-		if err != nil {
-			continue // Skip files that can't be opened
-		}
-
-		// Read the entire content
-		content, err := io.ReadAll(file)
-		file.Close()
-		if err != nil {
-			continue // Skip files that can't be read
-		}
-
-		// Check if the content matches the pattern
-		if re.Match(content) {
-			results = append(results, &SearchResult{
-				Index: i,
-				Item:  item,
-			})
-		}
+	if iter.Err() != nil {
+		return nil, iter.Err()
 	}
 
-	return results, nil
+	return res, nil
+}
+
+type IterError[T any] struct {
+	iter iter.Seq[T]
+	err  error
+}
+
+func (e *IterError[T]) Err() error {
+	return e.err
+}
+
+func (e *IterError[T]) Iter() iter.Seq[T] {
+	return e.iter
+}
+
+func newIterError[T any](createIter func(*error) iter.Seq[T]) *IterError[T] {
+	res := &IterError[T]{}
+	res.iter = createIter(&res.err)
+	return res
 }

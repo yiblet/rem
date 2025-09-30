@@ -94,9 +94,10 @@ func (Args) Epilogue() string {
   # History management
   rem clear                        # Clear all history (with confirmation)
   rem clear --force                # Clear all history without confirmation
-  rem search 'error.*log'          # Search for regex pattern in history
+  rem search 'error.*log'          # Search for regex pattern (first match content)
   rem search -i 'pattern'          # Output only the index of first match
-  rem search -a 'pattern'          # Show all matching items
+  rem search -a 'pattern'          # Concatenate all matching items
+  rem search -a -i 'pattern'       # Show indexes of all matching items
 
 For more information, visit: https://github.com/yiblet/rem`
 }

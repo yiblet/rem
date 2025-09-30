@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yiblet/rem/internal/remfs"
@@ -501,6 +502,84 @@ func TestConfigIntegrationWithQueueManager(t *testing.T) {
 	if cli2.stackManager.GetHistoryLimit() != 5 {
 		t.Errorf("Expected queue manager history limit 5, got %d", cli2.stackManager.GetHistoryLimit())
 	}
+}
+
+func TestSearchCommand_AllMatches(t *testing.T) {
+	// Create CLI with in-memory filesystem
+	args := &Args{}
+	cli, err := NewWithArgs(args)
+	if err != nil {
+		t.Fatalf("Failed to create CLI: %v", err)
+	}
+
+	// Add test data
+	testData := []string{
+		"first item with pattern",
+		"second item without keyword",
+		"third item with pattern again",
+	}
+
+	for _, data := range testData {
+		_, err := cli.stackManager.Enqueue(strings.NewReader(data))
+		if err != nil {
+			t.Fatalf("Failed to enqueue test data: %v", err)
+		}
+	}
+
+	// Test 1: Search with --all should concatenate all matching content
+	t.Run("all matches concatenate content", func(t *testing.T) {
+		searchCmd := &SearchCmd{
+			Pattern:    "pattern",
+			AllMatches: true,
+			IndexOnly:  false,
+		}
+
+		// Execute search - this would write to stdout in real usage
+		// For testing, we verify no error occurs
+		err := cli.executeSearch(searchCmd)
+		if err != nil {
+			t.Errorf("Search with --all failed: %v", err)
+		}
+	})
+
+	// Test 2: Search with --all -i should show all indexes
+	t.Run("all matches index only", func(t *testing.T) {
+		searchCmd := &SearchCmd{
+			Pattern:    "pattern",
+			AllMatches: true,
+			IndexOnly:  true,
+		}
+
+		err := cli.executeSearch(searchCmd)
+		if err != nil {
+			t.Errorf("Search with --all -i failed: %v", err)
+		}
+	})
+
+	// Test 3: Search with -i should show first index only
+	t.Run("first match index only", func(t *testing.T) {
+		searchCmd := &SearchCmd{
+			Pattern:   "pattern",
+			IndexOnly: true,
+		}
+
+		err := cli.executeSearch(searchCmd)
+		if err != nil {
+			t.Errorf("Search with -i failed: %v", err)
+		}
+	})
+
+	// Test 4: Default search should return first match content
+	t.Run("first match content", func(t *testing.T) {
+		searchCmd := &SearchCmd{
+			Pattern: "pattern",
+		}
+
+		err := cli.executeSearch(searchCmd)
+		if err != nil {
+			t.Errorf("Default search failed: %v", err)
+		}
+	})
 }
 
 // Helper functions for pointer creation
