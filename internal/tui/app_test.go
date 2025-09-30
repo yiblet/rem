@@ -61,7 +61,7 @@ func TestAppModel_WindowResize(t *testing.T) {
 		t.Errorf("Expected height to be 30, got %d", updatedApp.Height)
 	}
 
-	expectedRightWidth := 140 - 25 - 3 // width - leftWidth - spacing
+	expectedRightWidth := 140 - 25 - 2 // width - leftWidth - spacing (2 for adjacent borders)
 	if updatedApp.RightWidth != expectedRightWidth {
 		t.Errorf("Expected right width to be %d, got %d", expectedRightWidth, updatedApp.RightWidth)
 	}

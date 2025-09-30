@@ -143,7 +143,7 @@ func (a *AppModel) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd
 	// Calculate pane widths with proper constraints
 	minLeftWidth := 15
 	minRightWidth := 20
-	borderSpacing := 3
+	borderSpacing := 2 // Account for adjacent borders (no space separator)
 
 	// If total width is too small, split proportionally
 	if a.Width < minLeftWidth+minRightWidth+borderSpacing {
@@ -318,8 +318,23 @@ func (a *AppModel) handleDeleteModeKeys(key string) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		// Confirm deletion
 		if a.LeftPane.Selected < len(a.Items) && len(a.Items) > 0 {
-			// Remove item from the Items slice
 			deletedIndex := a.LeftPane.Selected
+			selectedItem := a.Items[deletedIndex]
+
+			// Delete from persistent storage if DeleteFunc is provided
+			if selectedItem.DeleteFunc != nil {
+				if err := selectedItem.DeleteFunc(); err != nil {
+					// Show error message and stay in delete mode
+					a.Modal.Update(ShowModalMsg{
+						Title:   "Delete Error",
+						Content: fmt.Sprintf("Failed to delete item: %v", err),
+						Options: "Press any key to continue",
+					})
+					return a, nil
+				}
+			}
+
+			// Remove item from the Items slice
 			a.Items = append(a.Items[:deletedIndex], a.Items[deletedIndex+1:]...)
 
 			// Adjust cursor position if needed
@@ -336,6 +351,14 @@ func (a *AppModel) handleDeleteModeKeys(key string) (tea.Model, tea.Cmd) {
 
 			// Update the right pane content
 			a.RightPane.Update(UpdateContentMsg{})
+
+			// Show success flash message
+			flashCmd := a.setFlashMessage("Item deleted successfully", 2*time.Second)
+
+			// Hide modal and return to normal mode
+			a.Modal.Update(HideModalMsg{})
+			a.CurrentMode = NormalMode
+			return a, flashCmd
 		}
 
 		// Hide modal and return to normal mode
@@ -571,8 +594,8 @@ func renderNormalView(model AppModel) (string, error) {
 			rightLine = rightLines[i]
 		}
 
-		// Join with a single space as separator between panes
-		result.WriteString(leftLine + " " + rightLine + "\n")
+		// Join panes directly (borders provide visual separation)
+		result.WriteString(leftLine + rightLine + "\n")
 	}
 
 	result.WriteString("\n" + renderStatusLine(model))

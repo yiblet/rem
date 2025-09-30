@@ -229,13 +229,20 @@ func (c *CLI) launchTUI() error {
 			continue
 		}
 
+		// Capture ID for closure
+		itemID := sItem.ID
+
 		tuiItem := &tui.StackItem{
+			ID:       itemID,
 			Content:  contentReader,
 			Preview:  sItem.Preview,
 			ViewPos:  0,
 			IsBinary: sItem.IsBinary,
 			Size:     sItem.Size,
 			SHA256:   sItem.SHA256,
+			DeleteFunc: func() error {
+				return c.stackManager.DeleteByID(itemID)
+			},
 		}
 		tuiItems = append(tuiItems, tuiItem)
 	}

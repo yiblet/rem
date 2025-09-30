@@ -15,6 +15,7 @@ import (
 
 const (
 	DefaultMaxStackSize = 255
+	FileExtension       = ".rem" // File extension for stack items
 	// ContentDir removed - remfs now points directly to the history directory
 )
 
@@ -35,6 +36,7 @@ type StackManager struct {
 
 // StackItem represents a single item in the stack
 type StackItem struct {
+	ID        string    // Unique identifier (filename without extension)
 	Timestamp time.Time
 	FilePath  string
 	Preview   string
@@ -72,7 +74,7 @@ func (qm *StackManager) FileSystem() FileSystem {
 // Push adds a new item to the stack from an io.Reader
 func (qm *StackManager) Push(content io.Reader) (*StackItem, error) {
 	now := time.Now()
-	filename := now.Format("2006-01-02T15-04-05.000000Z07-00") + ".txt"
+	filename := now.Format("2006-01-02T15-04-05.000000Z07-00") + FileExtension
 	filePath := filename
 
 	// Read all content into memory first
@@ -103,6 +105,7 @@ func (qm *StackManager) Push(content io.Reader) (*StackItem, error) {
 	}
 
 	item := &StackItem{
+		ID:        strings.TrimSuffix(filename, FileExtension),
 		Timestamp: now,
 		FilePath:  filePath,
 		Preview:   preview,
@@ -199,7 +202,7 @@ func (qm *StackManager) cleanupOldFiles() error {
 	// Filter only content files (not directories or other files)
 	var contentFiles []fs.DirEntry
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".txt") {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), FileExtension) {
 			contentFiles = append(contentFiles, file)
 		}
 	}
@@ -235,12 +238,12 @@ func (qm *StackManager) List() ([]*StackItem, error) {
 
 	var items []*StackItem
 	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".txt") {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), FileExtension) {
 			continue
 		}
 
 		// Parse timestamp from filename
-		filename := strings.TrimSuffix(file.Name(), ".txt")
+		filename := strings.TrimSuffix(file.Name(), FileExtension)
 		timestamp, err := time.Parse("2006-01-02T15-04-05.000000Z07-00", filename)
 		if err != nil {
 			continue // Skip files with invalid timestamp format
@@ -255,6 +258,7 @@ func (qm *StackManager) List() ([]*StackItem, error) {
 		}
 
 		items = append(items, &StackItem{
+			ID:        filename,
 			Timestamp: timestamp,
 			FilePath:  filePath,
 			Preview:   preview,
@@ -382,7 +386,7 @@ func (w *readSeekCloserWrapper) Seek(offset int64, whence int) (int64, error) {
 	return 0, fmt.Errorf("seek not supported")
 }
 
-// Delete removes the item from the stack
+// Delete removes the item from the stack by index (deprecated, use DeleteByID)
 func (qm *StackManager) Delete(index int) error {
 	item, err := qm.Get(index)
 	if err != nil {
@@ -390,6 +394,24 @@ func (qm *StackManager) Delete(index int) error {
 	}
 
 	if err := qm.fs.Remove(item.FilePath); err != nil {
+		return fmt.Errorf("failed to delete file: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteByID removes the item from the stack by its unique ID
+func (qm *StackManager) DeleteByID(id string) error {
+	// Construct the filename from the ID
+	filename := id + FileExtension
+
+	// Check if the file exists by attempting to stat it
+	if _, err := qm.fs.Open(filename); err != nil {
+		return fmt.Errorf("item not found: %w", err)
+	}
+
+	// Delete the file
+	if err := qm.fs.Remove(filename); err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 

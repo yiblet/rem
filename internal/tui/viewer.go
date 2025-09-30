@@ -58,6 +58,7 @@ func (s *StringReadSeekCloser) Close() error {
 
 // StackItem represents an item in the rem stack
 type StackItem struct {
+	ID            string           // Unique identifier for this item
 	Content       io.ReadSeekCloser
 	Preview       string
 	Lines         []string // cached wrapped lines
@@ -69,6 +70,7 @@ type StackItem struct {
 	IsBinary      bool     // true if content is binary
 	Size          int64    // size in bytes (useful for binary files)
 	SHA256        string   // SHA256 hash (for binary files)
+	DeleteFunc    func() error // function to delete this item from persistent storage
 }
 
 // GetFullContent reads the entire content from the ReadSeekCloser
