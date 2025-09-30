@@ -253,7 +253,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-
 func (m Model) View() string {
 	// Delegate to app component
 	return m.app.View()
@@ -283,7 +282,6 @@ func (m *Model) syncFromApp() {
 	m.leftWidth = m.app.LeftWidth
 	m.rightWidth = m.app.RightWidth
 }
-
 
 // Legacy type alias for backward compatibility
 type QueueItem = StackItem
@@ -383,4 +381,3 @@ func wrapText(text string, width int) string {
 
 	return result.String()
 }
-

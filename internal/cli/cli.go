@@ -74,6 +74,10 @@ func (c *CLI) Execute(args *Args) error {
 		return c.executeGet(args.Get)
 	case args.Config != nil:
 		return c.executeConfig(args.Config)
+	case args.Clear != nil:
+		return c.executeClear(args.Clear)
+	case args.Search != nil:
+		return c.executeSearch(args.Search)
 	default:
 		// Default behavior: launch TUI
 		return c.launchTUI()
@@ -316,6 +320,94 @@ func (c *CLI) writeToFile(filename string, content []byte) error {
 
 	fmt.Printf("Written to %s: %s\n", filename, c.truncatePreview(string(content)))
 	return nil
+}
+
+// executeClear handles the 'rem clear' command
+func (c *CLI) executeClear(cmd *ClearCmd) error {
+	// Get current stack size
+	items, err := c.stackManager.List()
+	if err != nil {
+		return fmt.Errorf("failed to list items: %w", err)
+	}
+
+	if len(items) == 0 {
+		fmt.Println("Stack is already empty.")
+		return nil
+	}
+
+	// Prompt for confirmation unless --force is used
+	if !cmd.Force {
+		fmt.Printf("This will delete %d item(s) from history. Continue? [y/N]: ", len(items))
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+		if response != "y" && response != "yes" {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+	}
+
+	// Clear the stack by deleting all history files
+	if err := c.stackManager.Clear(); err != nil {
+		return fmt.Errorf("failed to clear history: %w", err)
+	}
+
+	fmt.Printf("Cleared %d item(s) from history.\n", len(items))
+	return nil
+}
+
+// executeSearch handles the 'rem search' command
+func (c *CLI) executeSearch(cmd *SearchCmd) error {
+	// Get all items from stack
+	items, err := c.stackManager.List()
+	if err != nil {
+		return fmt.Errorf("failed to list items: %w", err)
+	}
+
+	if len(items) == 0 {
+		return fmt.Errorf("stack is empty")
+	}
+
+	// Search for pattern in items
+	matches, err := c.stackManager.Search(cmd.Pattern)
+	if err != nil {
+		return fmt.Errorf("failed to search: %w", err)
+	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("no matches found for pattern: %s", cmd.Pattern)
+	}
+
+	// Handle different output modes
+	if cmd.IndexOnly {
+		// Output only the index of the first match
+		fmt.Printf("%d\n", matches[0].Index)
+		return nil
+	}
+
+	if cmd.AllMatches {
+		// Show all matches
+		for _, match := range matches {
+			fmt.Printf("Index %d: %s\n", match.Index, match.Item.Preview)
+		}
+		return nil
+	}
+
+	// Default: output content of first match
+	firstMatch := matches[0]
+	reader, err := firstMatch.Item.GetContentReader(c.filesystem)
+	if err != nil {
+		return fmt.Errorf("failed to read content: %w", err)
+	}
+	defer reader.Close()
+
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return fmt.Errorf("failed to read content: %w", err)
+	}
+
+	_, err = os.Stdout.Write(content)
+	return err
 }
 
 // truncatePreview creates a truncated preview of content for display

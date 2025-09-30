@@ -9,8 +9,8 @@ import (
 
 const (
 	ConfigDir      = ".config/rem"
-	DefaultHistDir = "history"  // New default (was "content")
-	LegacyHistDir  = "content"  // Legacy directory name
+	DefaultHistDir = "history" // New default (was "content")
+	LegacyHistDir  = "content" // Legacy directory name
 )
 
 // RemFS is a filesystem rooted at the rem configuration directory

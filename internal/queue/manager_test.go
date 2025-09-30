@@ -126,7 +126,7 @@ func (fi *memoryFileInfo) Name() string       { return fi.name }
 func (fi *memoryFileInfo) Size() int64        { return fi.size }
 func (fi *memoryFileInfo) Mode() fs.FileMode  { return fi.mode }
 func (fi *memoryFileInfo) ModTime() time.Time { return time.Time{} }
-func (fi *memoryFileInfo) IsDir() bool         { return fi.mode.IsDir() }
+func (fi *memoryFileInfo) IsDir() bool        { return fi.mode.IsDir() }
 func (fi *memoryFileInfo) Sys() interface{}   { return nil }
 
 func TestQueueManager_Basic(t *testing.T) {
@@ -266,5 +266,168 @@ func TestQueueManager_Preview(t *testing.T) {
 		if item.Preview != tc.expected {
 			t.Errorf("Test case %d: expected preview '%s', got '%s'", i, tc.expected, item.Preview)
 		}
+	}
+}
+
+func TestStackManager_Clear(t *testing.T) {
+	memFS := NewMemoryFileSystem()
+	qm, err := NewStackManager(memFS)
+	if err != nil {
+		t.Fatalf("Failed to create stack manager: %v", err)
+	}
+
+	// Add some items to the stack
+	for i := 0; i < 5; i++ {
+		content := strings.NewReader(fmt.Sprintf("Item %d", i))
+		_, err := qm.Push(content)
+		if err != nil {
+			t.Fatalf("Failed to push item %d: %v", i, err)
+		}
+	}
+
+	// Verify items were added
+	size, err := qm.Size()
+	if err != nil {
+		t.Fatalf("Failed to get size: %v", err)
+	}
+	if size != 5 {
+		t.Errorf("Expected size 5, got %d", size)
+	}
+
+	// Clear the stack
+	err = qm.Clear()
+	if err != nil {
+		t.Fatalf("Failed to clear stack: %v", err)
+	}
+
+	// Verify stack is empty
+	size, err = qm.Size()
+	if err != nil {
+		t.Fatalf("Failed to get size after clear: %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Expected size 0 after clear, got %d", size)
+	}
+
+	// Test clearing empty stack (should not error)
+	err = qm.Clear()
+	if err != nil {
+		t.Fatalf("Failed to clear empty stack: %v", err)
+	}
+}
+
+func TestStackManager_Search(t *testing.T) {
+	memFS := NewMemoryFileSystem()
+	qm, err := NewStackManager(memFS)
+	if err != nil {
+		t.Fatalf("Failed to create stack manager: %v", err)
+	}
+
+	// Add test items
+	testItems := []string{
+		"Hello World",
+		"Error: something went wrong",
+		"Debug: checking values",
+		"Error: another problem occurred",
+		"Success: operation completed",
+	}
+
+	for _, content := range testItems {
+		_, err := qm.Push(strings.NewReader(content))
+		if err != nil {
+			t.Fatalf("Failed to push item: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name          string
+		pattern       string
+		expectedCount int
+		expectedIndex []int
+	}{
+		{
+			name:          "Find all errors",
+			pattern:       "Error:",
+			expectedCount: 2,
+			expectedIndex: []int{1, 3}, // LIFO order: item 4 is at index 1, item 2 is at index 3
+		},
+		{
+			name:          "Find debug",
+			pattern:       "Debug:",
+			expectedCount: 1,
+			expectedIndex: []int{2},
+		},
+		{
+			name:          "Regex pattern",
+			pattern:       "Error:.*wrong",
+			expectedCount: 1,
+			expectedIndex: []int{3}, // "Error: something went wrong" is at index 3
+		},
+		{
+			name:          "Case sensitive",
+			pattern:       "hello",
+			expectedCount: 0,
+			expectedIndex: []int{},
+		},
+		{
+			name:          "No matches",
+			pattern:       "NotFound",
+			expectedCount: 0,
+			expectedIndex: []int{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := qm.Search(tt.pattern)
+			if err != nil {
+				t.Fatalf("Search failed: %v", err)
+			}
+
+			if len(results) != tt.expectedCount {
+				t.Errorf("Expected %d results, got %d", tt.expectedCount, len(results))
+			}
+
+			for i, result := range results {
+				if i >= len(tt.expectedIndex) {
+					break
+				}
+				if result.Index != tt.expectedIndex[i] {
+					t.Errorf("Result %d: expected index %d, got %d", i, tt.expectedIndex[i], result.Index)
+				}
+			}
+		})
+	}
+}
+
+func TestStackManager_Search_InvalidRegex(t *testing.T) {
+	memFS := NewMemoryFileSystem()
+	qm, err := NewStackManager(memFS)
+	if err != nil {
+		t.Fatalf("Failed to create stack manager: %v", err)
+	}
+
+	// Test with invalid regex pattern
+	_, err = qm.Search("[invalid")
+	if err == nil {
+		t.Error("Expected error for invalid regex pattern, got nil")
+	}
+}
+
+func TestStackManager_Search_EmptyStack(t *testing.T) {
+	memFS := NewMemoryFileSystem()
+	qm, err := NewStackManager(memFS)
+	if err != nil {
+		t.Fatalf("Failed to create stack manager: %v", err)
+	}
+
+	// Search in empty stack
+	results, err := qm.Search("test")
+	if err != nil {
+		t.Fatalf("Search in empty stack should not error: %v", err)
+	}
+
+	if len(results) != 0 {
+		t.Errorf("Expected 0 results in empty stack, got %d", len(results))
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -316,4 +317,70 @@ func (qm *StackManager) GetHistoryLimit() int {
 // Legacy method aliases for backward compatibility
 func (qm *StackManager) Enqueue(content io.Reader) (*StackItem, error) {
 	return qm.Push(content)
+}
+
+// Clear removes all items from the stack
+func (qm *StackManager) Clear() error {
+	items, err := qm.List()
+	if err != nil {
+		return fmt.Errorf("failed to list items: %w", err)
+	}
+
+	// Delete each item's file
+	for _, item := range items {
+		if err := qm.fs.Remove(item.FilePath); err != nil {
+			return fmt.Errorf("failed to remove file %s: %w", item.FilePath, err)
+		}
+	}
+
+	return nil
+}
+
+// SearchResult represents a search result with the item and its index
+type SearchResult struct {
+	Index int
+	Item  *StackItem
+}
+
+// Search searches for items matching the given regex pattern
+func (qm *StackManager) Search(pattern string) ([]*SearchResult, error) {
+	// Compile the regex pattern
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+	}
+
+	// Get all items from the stack
+	items, err := qm.List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list items: %w", err)
+	}
+
+	var results []*SearchResult
+
+	// Search through each item
+	for i, item := range items {
+		// Open the file to read its content
+		file, err := qm.fs.Open(item.FilePath)
+		if err != nil {
+			continue // Skip files that can't be opened
+		}
+
+		// Read the entire content
+		content, err := io.ReadAll(file)
+		file.Close()
+		if err != nil {
+			continue // Skip files that can't be read
+		}
+
+		// Check if the content matches the pattern
+		if re.Match(content) {
+			results = append(results, &SearchResult{
+				Index: i,
+				Item:  item,
+			})
+		}
+	}
+
+	return results, nil
 }

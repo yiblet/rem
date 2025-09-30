@@ -14,7 +14,7 @@ func main() {
 	parser := arg.MustParse(&args)
 
 	// If no subcommand provided, show help or launch TUI
-	if args.Store == nil && args.Get == nil && args.Config == nil {
+	if args.Store == nil && args.Get == nil && args.Config == nil && args.Clear == nil && args.Search == nil {
 		// Default behavior: launch TUI (same as 'rem get')
 		args.Get = &cli.GetCmd{}
 	}
@@ -31,11 +31,10 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 
 		// If it's an argument validation error, show usage
-		if args.Store != nil || args.Get != nil || args.Config != nil {
+		if args.Store != nil || args.Get != nil || args.Config != nil || args.Clear != nil || args.Search != nil {
 			fmt.Println()
 			parser.WriteUsage(os.Stderr)
 		}
 		os.Exit(1)
 	}
 }
-

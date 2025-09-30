@@ -178,7 +178,7 @@ func TestArgsValidation_ValidCases(t *testing.T) {
 			name: "with custom history",
 			args: Args{
 				History: stringPtr("/tmp/custom-history"),
-				Get: &GetCmd{},
+				Get:     &GetCmd{},
 			},
 		},
 	}

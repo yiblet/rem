@@ -9,6 +9,8 @@ type Args struct {
 	Store   *StoreCmd  `arg:"subcommand:store" help:"Push content to the stack"`
 	Get     *GetCmd    `arg:"subcommand:get" help:"Access content from the stack"`
 	Config  *ConfigCmd `arg:"subcommand:config" help:"Manage rem configuration"`
+	Clear   *ClearCmd  `arg:"subcommand:clear" help:"Clear all history from the stack"`
+	Search  *SearchCmd `arg:"subcommand:search" help:"Search history for content matching a regex pattern"`
 	History *string    `arg:"--history,env:REM_HISTORY" help:"Custom history directory location (overrides default ~/.config/rem/history/)"`
 }
 
@@ -47,6 +49,18 @@ type ConfigSetCmd struct {
 type ConfigListCmd struct {
 }
 
+// ClearCmd represents the 'rem clear' command (clears all history)
+type ClearCmd struct {
+	Force bool `arg:"-f,--force" help:"Skip confirmation prompt"`
+}
+
+// SearchCmd represents the 'rem search' command (searches history)
+type SearchCmd struct {
+	Pattern    string `arg:"positional,required" help:"Regex pattern to search for"`
+	IndexOnly  bool   `arg:"-i,--index-only" help:"Output only the index of the first match"`
+	AllMatches bool   `arg:"-a,--all" help:"Show all matching items (not just the first)"`
+}
+
 // Description returns the program description
 func (Args) Description() string {
 	return "rem - Enhanced clipboard stack manager with persistent LIFO stack"
@@ -76,6 +90,13 @@ func (Args) Epilogue() string {
   rem config get history-limit     # Get specific configuration value
   rem config set history-limit 50  # Set configuration value
 
+  # History management
+  rem clear                        # Clear all history (with confirmation)
+  rem clear --force                # Clear all history without confirmation
+  rem search 'error.*log'          # Search for regex pattern in history
+  rem search -i 'pattern'          # Output only the index of first match
+  rem search -a 'pattern'          # Show all matching items
+
 For more information, visit: https://github.com/yiblet/rem`
 }
 
@@ -89,6 +110,12 @@ func (args *Args) Validate() error {
 	}
 	if args.Config != nil {
 		return args.Config.Validate()
+	}
+	if args.Clear != nil {
+		return args.Clear.Validate()
+	}
+	if args.Search != nil {
+		return args.Search.Validate()
 	}
 	return nil
 }
@@ -172,5 +199,19 @@ func (s *ConfigSetCmd) Validate() error {
 // Validate validates config list command arguments
 func (l *ConfigListCmd) Validate() error {
 	// No validation needed for list command
+	return nil
+}
+
+// Validate validates clear command arguments
+func (c *ClearCmd) Validate() error {
+	// No specific validation needed for clear command
+	return nil
+}
+
+// Validate validates search command arguments
+func (s *SearchCmd) Validate() error {
+	if s.Pattern == "" {
+		return fmt.Errorf("search pattern cannot be empty")
+	}
 	return nil
 }

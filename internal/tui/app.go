@@ -25,6 +25,7 @@ const (
 	SearchMode
 	HelpMode
 	NumberInputMode
+	DeleteMode
 )
 
 // AppMsg represents messages that the app component handles
@@ -56,7 +57,6 @@ type KeyPressMsg struct {
 
 func (KeyPressMsg) isAppMsg() {}
 
-
 // AppModel orchestrates all sub-models
 type AppModel struct {
 	Width       int      // Window width
@@ -67,10 +67,10 @@ type AppModel struct {
 	CurrentMode UIMode   // Current modal state
 
 	// Sub-models
-	LeftPane   LeftPaneModel
-	RightPane  RightPaneModel
-	Search     SearchModel
-	Items      []*StackItem
+	LeftPane  LeftPaneModel
+	RightPane RightPaneModel
+	Search    SearchModel
+	Items     []*StackItem
 
 	// Number input mode for multi-digit commands like "10j"
 	NumberBuffer string   // Accumulates digits
@@ -129,10 +129,10 @@ func (a *AppModel) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd
 	borderSpacing := 3
 
 	// If total width is too small, split proportionally
-	if a.Width < minLeftWidth + minRightWidth + borderSpacing {
+	if a.Width < minLeftWidth+minRightWidth+borderSpacing {
 		// Very narrow - give each pane minimum space
 		a.LeftWidth = minLeftWidth
-		a.RightWidth = max(a.Width - a.LeftWidth - borderSpacing, minRightWidth)
+		a.RightWidth = max(a.Width-a.LeftWidth-borderSpacing, minRightWidth)
 	} else {
 		// Normal case - use preferred left width, rest goes to right
 		preferredLeftWidth := 25
@@ -172,6 +172,8 @@ func (a *AppModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleHelpModeKeys(key)
 	case NumberInputMode:
 		return a.handleNumberInputModeKeys(key)
+	case DeleteMode:
+		return a.handleDeleteModeKeys(key)
 	case NormalMode:
 		return a.handleNormalModeKeys(key)
 	default:
@@ -290,6 +292,48 @@ func (a *AppModel) handleNumberInputModeKeys(key string) (tea.Model, tea.Cmd) {
 	}
 }
 
+// handleDeleteModeKeys processes keys when in delete confirmation mode
+func (a *AppModel) handleDeleteModeKeys(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "ctrl+c":
+		// Force quit is always available
+		return a, tea.Quit
+	case "y", "Y":
+		// Confirm deletion
+		if a.LeftPane.Selected < len(a.Items) && len(a.Items) > 0 {
+			// Remove item from the Items slice
+			deletedIndex := a.LeftPane.Selected
+			a.Items = append(a.Items[:deletedIndex], a.Items[deletedIndex+1:]...)
+
+			// Adjust cursor position if needed
+			if len(a.Items) == 0 {
+				// Stack is now empty
+				a.LeftPane.Cursor = 0
+				a.LeftPane.Selected = 0
+			} else if a.LeftPane.Selected >= len(a.Items) {
+				// Cursor was at the last item, move it back
+				a.LeftPane.Cursor = len(a.Items) - 1
+				a.LeftPane.Selected = a.LeftPane.Cursor
+			}
+			// else: cursor stays at the same index, now pointing to the next item
+
+			// Update the right pane content
+			a.RightPane.Update(UpdateContentMsg{})
+		}
+
+		// Return to normal mode
+		a.CurrentMode = NormalMode
+		return a, nil
+	case "n", "N", "esc":
+		// Cancel deletion
+		a.CurrentMode = NormalMode
+		return a, nil
+	default:
+		// Ignore other keys in delete mode
+		return a, nil
+	}
+}
+
 // handleNormalModeKeys processes keys when in normal mode
 func (a *AppModel) handleNormalModeKeys(key string) (tea.Model, tea.Cmd) {
 	// Handle global keys that work in normal mode
@@ -359,6 +403,12 @@ func (a *AppModel) handleNormalModeKeys(key string) (tea.Model, tea.Cmd) {
 func (a *AppModel) handleLeftPaneKeys(key string) (tea.Model, tea.Cmd) {
 	// Only handle non-movement keys here, movement keys are handled by executeCommand
 	switch key {
+	case "d":
+		// Enter delete confirmation mode if there are items
+		if len(a.Items) > 0 && a.LeftPane.Selected < len(a.Items) {
+			a.CurrentMode = DeleteMode
+		}
+		return a, nil
 	default:
 		// Handle other left pane specific keys here if needed in the future
 	}
@@ -440,6 +490,22 @@ func AppView(model AppModel) (string, error) {
 		return helpView + "\n\n" + renderStatusLine(model), nil
 	}
 
+	// Render normal view first (this will be the background for delete modal)
+	normalView, err := renderNormalView(model)
+	if err != nil {
+		return "", err
+	}
+
+	// Overlay delete modal if in delete mode
+	if model.CurrentMode == DeleteMode {
+		return renderDeleteModal(model, normalView), nil
+	}
+
+	return normalView, nil
+}
+
+// renderNormalView renders the normal dual-pane view
+func renderNormalView(model AppModel) (string, error) {
 	leftPaneFocused := model.ActivePane == LeftPane
 	rightPaneFocused := model.ActivePane == RightPane
 
@@ -560,6 +626,9 @@ CONTENT VIEWING:
   Ctrl+b      Page up (full screen)
   Ctrl+f      Page down (full screen)
 
+HISTORY MANAGEMENT:
+  d           Delete selected item (left pane only)
+
 STACK BEHAVIOR:
   Index 0     Most recent item (top of stack)
   Index 1+    Older items in reverse chronological order
@@ -580,6 +649,101 @@ Press z again to return to normal view.`
 		Height(model.Height - 4)
 
 	return helpStyle.Render(helpContent)
+}
+
+// renderDeleteModal renders the delete confirmation modal overlaid on the normal view
+func renderDeleteModal(model AppModel, backgroundView string) string {
+	// Get the preview of the item being deleted
+	var itemPreview string
+	if model.LeftPane.Selected < len(model.Items) {
+		itemPreview = model.Items[model.LeftPane.Selected].Preview
+	} else {
+		itemPreview = "Unknown item"
+	}
+
+	// Create modal content
+	modalContent := fmt.Sprintf(`Delete Item?
+
+Item: %s
+Index: %d
+
+Are you sure you want to delete this item?
+
+[Y] Yes, delete    [N] No, cancel`, itemPreview, model.LeftPane.Selected)
+
+	// Calculate modal dimensions
+	modalWidth := 60
+	modalHeight := 10
+
+	// Ensure modal fits within window
+	if modalWidth > model.Width-4 {
+		modalWidth = model.Width - 4
+	}
+	if modalHeight > model.Height-4 {
+		modalHeight = model.Height - 4
+	}
+
+	// Create modal style with border
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("9")). // Bright red border
+		Padding(1, 2).
+		Width(modalWidth).
+		Height(modalHeight).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	modal := modalStyle.Render(modalContent)
+
+	// Split background and modal into lines
+	backgroundLines := strings.Split(backgroundView, "\n")
+	modalLines := strings.Split(modal, "\n")
+
+	// Calculate position to center the modal
+	modalStartY := (model.Height - len(modalLines)) / 2
+	modalStartX := (model.Width - lipgloss.Width(modalLines[0])) / 2
+
+	if modalStartY < 0 {
+		modalStartY = 0
+	}
+	if modalStartX < 0 {
+		modalStartX = 0
+	}
+
+	// Overlay modal on background
+	var result strings.Builder
+	for i := 0; i < len(backgroundLines); i++ {
+		bgLine := backgroundLines[i]
+
+		// Check if this line should have modal overlay
+		modalLineIdx := i - modalStartY
+		if modalLineIdx >= 0 && modalLineIdx < len(modalLines) {
+			modalLine := modalLines[modalLineIdx]
+
+			// Overlay modal line on background line
+			if modalStartX+len(modalLine) <= len(bgLine) {
+				// Modal fits within background line
+				result.WriteString(bgLine[:modalStartX])
+				result.WriteString(modalLine)
+				if modalStartX+len(modalLine) < len(bgLine) {
+					result.WriteString(bgLine[modalStartX+len(modalLine):])
+				}
+			} else {
+				// Modal extends beyond background, pad as needed
+				if modalStartX < len(bgLine) {
+					result.WriteString(bgLine[:modalStartX])
+				} else {
+					result.WriteString(bgLine)
+					result.WriteString(strings.Repeat(" ", modalStartX-len(bgLine)))
+				}
+				result.WriteString(modalLine)
+			}
+		} else {
+			result.WriteString(bgLine)
+		}
+		result.WriteString("\n")
+	}
+
+	return result.String()
 }
 
 // handleNumberMode processes digit input and backspace for vim-style number prefixes

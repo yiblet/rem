@@ -94,7 +94,7 @@
 - ✅ **Comprehensive Testing**: Unit tests for config package and integration tests for CLI commands
 - ✅ **Configuration Schema**: Supports `history-limit`, `show-binary`, and `history-location` settings
 
-### Phase 3: History Management Operations [TODO]
+### Phase 3: History Management Operations [COMPLETED]
 **Priority**: Medium - User convenience features
 **Complexity**: Medium-High
 **Dependencies**: Phase 2 complete
@@ -119,11 +119,22 @@
 - Integration with existing stream-based content model
 
 **Phase 3 Testing:**
-- **Integration Tests**: `rem clear` command with mock filesystem and confirmation logic
-- **Unit Tests**: TUI deletion component state management and stack reordering logic
-- **Unit Tests**: Search regex compilation, pattern matching, and result formatting
-- **Integration Tests**: Search functionality with generated test data and various file sizes
-- **Unit Tests**: Error handling for malformed regex patterns and empty result sets
+- **Integration Tests**: `rem clear` command with mock filesystem and confirmation logic ✓
+- **Unit Tests**: TUI deletion component state management and stack reordering logic ✓
+- **Unit Tests**: Search regex compilation, pattern matching, and result formatting ✓
+- **Integration Tests**: Search functionality with generated test data and various file sizes ✓
+- **Unit Tests**: Error handling for malformed regex patterns and empty result sets ✓
+
+**Phase 3 Implementation Summary:**
+- ✅ **Clear Command**: Added `rem clear` CLI command with interactive confirmation and `--force` flag
+- ✅ **Stack Manager Clear()**: Implemented method to delete all history files
+- ✅ **TUI Item Deletion**: Added 'd' keybinding in left pane to enter delete confirmation modal
+- ✅ **Delete Confirmation Modal**: Modal UI overlay with centered dialog and red border
+- ✅ **Stack Index Management**: Automatic cursor adjustment after deletion (handles last item, empty stack)
+- ✅ **Search Command**: Added `rem search <pattern>` with regex support, `-i` for index-only, `-a` for all matches
+- ✅ **Stack Manager Search()**: Regex-based search across all stack items with SearchResult type
+- ✅ **Comprehensive Testing**: Unit tests for clear, search, and TUI deletion with edge cases
+- ✅ **Help Documentation**: Updated TUI help screen to document 'd' key for deletion
 
 ### Phase 4: TUI Configuration Interface [TODO]
 **Priority**: High - User experience improvement
@@ -245,13 +256,21 @@ Each phase must include high-level test descriptions to ensure correctness of th
 
 ## Next Steps
 
-1. **Start Phase 1**: Begin with environment variable support and directory migration
-2. **Create Feature Branch**: `feat/history-management`
-3. **Incremental Implementation**: Each phase should be fully functional
-4. **Continuous Testing**: Maintain test coverage throughout
-5. **Documentation**: Update ARCHITECTURE.md with new configuration system
+1. **Start Phase 4**: Implement TUI configuration interface for managing settings interactively
+2. **Continue Incremental Implementation**: Each phase should be fully functional
+3. **Maintain Test Coverage**: Continue comprehensive testing for all new features
+4. **Documentation Updates**: Update ARCHITECTURE.md with new modal system and deletion architecture
+
+## Phase 3 Notes and Limitations
+
+**TUI Deletion Limitation**: The current TUI deletion implementation removes items from the in-memory Items array but does not persist deletions to disk. This means:
+- Deletions are visible during the TUI session
+- When the TUI exits and is re-launched, deleted items reappear
+- For disk-persistent deletion, users should use the CLI's `rem clear` command or manually manage history files
+
+**Future Enhancement**: To make TUI deletions persistent, the architecture would need to be updated to pass the StackManager or a delete callback function to the TUI, allowing it to call `StackManager.Delete(index)` directly.
 
 ---
 
 **Last Updated**: 2025-09-29
-**Status**: Phase 2 Completed - Ready for Phase 3
+**Status**: Phase 3 Completed - Ready for Phase 4

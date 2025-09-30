@@ -42,12 +42,12 @@ func (ClearSearchMsg) isSearchMsg() {}
 
 // SearchModel holds the state for search functionality
 type SearchModel struct {
-	Active       bool     // true when in search mode
-	Input        string   // current search input
-	Pattern      string   // compiled search pattern
-	Error        string   // search error message
-	Matches      []int    // line numbers with matches
-	CurrentMatch int      // current match index (-1 if no matches)
+	Active       bool   // true when in search mode
+	Input        string // current search input
+	Pattern      string // compiled search pattern
+	Error        string // search error message
+	Matches      []int  // line numbers with matches
+	CurrentMatch int    // current match index (-1 if no matches)
 }
 
 // NewSearchModel creates a new search model with default values

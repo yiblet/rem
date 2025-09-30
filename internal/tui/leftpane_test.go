@@ -162,10 +162,6 @@ func TestLeftPaneModel_ResizeLeftPane(t *testing.T) {
 	}
 }
 
-
-
-
-
 func TestLeftPaneView_Focused(t *testing.T) {
 	items := []*StackItem{
 		{Preview: "Test item 1"},

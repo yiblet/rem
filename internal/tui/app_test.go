@@ -986,3 +986,166 @@ func TestAppModel_NumberInputModeHandling(t *testing.T) {
 		t.Errorf("Number buffer should be empty after returning to normal mode, got '%s'", updatedApp.NumberBuffer)
 	}
 }
+
+func TestAppModel_DeleteMode(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Item 0"), Preview: "Item 0"},
+		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
+		{Content: NewStringReadSeekCloser("Item 2"), Preview: "Item 2"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = LeftPane
+
+	// Press 'd' to enter delete mode
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != DeleteMode {
+		t.Errorf("Expected DeleteMode, got %v", updatedApp.CurrentMode)
+	}
+
+	// Press 'n' to cancel
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Should return to normal mode after canceling deletion")
+	}
+	if len(updatedApp.Items) != 3 {
+		t.Errorf("Expected 3 items after canceling deletion, got %d", len(updatedApp.Items))
+	}
+}
+
+func TestAppModel_DeleteConfirm(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Item 0"), Preview: "Item 0"},
+		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
+		{Content: NewStringReadSeekCloser("Item 2"), Preview: "Item 2"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = LeftPane
+	model.LeftPane.Selected = 1 // Select middle item
+
+	// Press 'd' to enter delete mode
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updatedApp := newModel.(*AppModel)
+
+	// Press 'y' to confirm deletion
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Should return to normal mode after confirming deletion")
+	}
+	if len(updatedApp.Items) != 2 {
+		t.Errorf("Expected 2 items after deletion, got %d", len(updatedApp.Items))
+	}
+
+	// Check that the correct item was deleted (item at index 1)
+	if updatedApp.Items[0].Preview != "Item 0" {
+		t.Errorf("Expected first item to be 'Item 0', got '%s'", updatedApp.Items[0].Preview)
+	}
+	if updatedApp.Items[1].Preview != "Item 2" {
+		t.Errorf("Expected second item to be 'Item 2', got '%s'", updatedApp.Items[1].Preview)
+	}
+}
+
+func TestAppModel_DeleteLastItem(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Item 0"), Preview: "Item 0"},
+		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
+		{Content: NewStringReadSeekCloser("Item 2"), Preview: "Item 2"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = LeftPane
+	model.LeftPane.Cursor = 2
+	model.LeftPane.Selected = 2 // Select last item
+
+	// Press 'd' then 'y' to delete last item
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updatedApp := newModel.(*AppModel)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updatedApp = newModel.(*AppModel)
+
+	if len(updatedApp.Items) != 2 {
+		t.Errorf("Expected 2 items after deletion, got %d", len(updatedApp.Items))
+	}
+
+	// Cursor should be moved back to last available item (index 1)
+	if updatedApp.LeftPane.Cursor != 1 {
+		t.Errorf("Expected cursor at index 1, got %d", updatedApp.LeftPane.Cursor)
+	}
+	if updatedApp.LeftPane.Selected != 1 {
+		t.Errorf("Expected selected at index 1, got %d", updatedApp.LeftPane.Selected)
+	}
+}
+
+func TestAppModel_DeleteAllItems(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Only item"), Preview: "Only item"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = LeftPane
+
+	// Delete the only item
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updatedApp := newModel.(*AppModel)
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updatedApp = newModel.(*AppModel)
+
+	if len(updatedApp.Items) != 0 {
+		t.Errorf("Expected 0 items after deleting all items, got %d", len(updatedApp.Items))
+	}
+
+	// Cursor should be at 0
+	if updatedApp.LeftPane.Cursor != 0 {
+		t.Errorf("Expected cursor at 0 when stack is empty, got %d", updatedApp.LeftPane.Cursor)
+	}
+}
+
+func TestAppModel_DeleteModeOnlyInLeftPane(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Item 0"), Preview: "Item 0"},
+		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = RightPane // Focus on right pane
+
+	// Press 'd' - should NOT enter delete mode since we're in right pane
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updatedApp := newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Errorf("Should remain in NormalMode when pressing 'd' in right pane, got %v", updatedApp.CurrentMode)
+	}
+}
+
+func TestAppModel_DeleteModeCancelWithEscape(t *testing.T) {
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser("Item 0"), Preview: "Item 0"},
+		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = LeftPane
+
+	// Enter delete mode
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updatedApp := newModel.(*AppModel)
+
+	// Cancel with escape
+	newModel, _ = updatedApp.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	updatedApp = newModel.(*AppModel)
+
+	if updatedApp.CurrentMode != NormalMode {
+		t.Error("Should return to normal mode after pressing escape in delete mode")
+	}
+	if len(updatedApp.Items) != 2 {
+		t.Errorf("Expected 2 items after canceling with escape, got %d", len(updatedApp.Items))
+	}
+}
