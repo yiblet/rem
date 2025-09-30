@@ -1,6 +1,8 @@
 package queue
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -8,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -35,6 +38,9 @@ type StackItem struct {
 	Timestamp time.Time
 	FilePath  string
 	Preview   string
+	IsBinary  bool   // true if content is binary
+	Size      int64  // size in bytes (useful for binary files)
+	SHA256    string // SHA256 hash (for binary files)
 }
 
 // NewStackManager creates a new stack manager with the provided filesystem
@@ -87,10 +93,22 @@ func (qm *StackManager) Push(content io.Reader) (*StackItem, error) {
 	// Generate preview
 	preview := qm.generatePreview(data)
 
+	// Check if binary and calculate metadata
+	binary := isBinary(data)
+	var sha256Hash string
+	if binary {
+		// Calculate SHA256 for binary files
+		hash := sha256.Sum256(data)
+		sha256Hash = hex.EncodeToString(hash[:])
+	}
+
 	item := &StackItem{
 		Timestamp: now,
 		FilePath:  filePath,
 		Preview:   preview,
+		IsBinary:  binary,
+		Size:      int64(len(data)),
+		SHA256:    sha256Hash,
 	}
 
 	// Clean up old files if we exceed max size
@@ -101,8 +119,49 @@ func (qm *StackManager) Push(content io.Reader) (*StackItem, error) {
 	return item, nil
 }
 
+// isBinary detects if data is binary by checking for non-printable characters
+// and invalid UTF-8 sequences
+func isBinary(data []byte) bool {
+	// Check first 512 bytes (or less if file is smaller)
+	checkLen := len(data)
+	if checkLen > 512 {
+		checkLen = 512
+	}
+
+	if checkLen == 0 {
+		return false
+	}
+
+	// Check if data is valid UTF-8
+	if !utf8.Valid(data[:checkLen]) {
+		return true
+	}
+
+	// Count non-printable characters (excluding common whitespace)
+	nonPrintable := 0
+	for _, b := range data[:checkLen] {
+		// Allow common whitespace: space, tab, newline, carriage return
+		if b < 32 && b != 9 && b != 10 && b != 13 {
+			nonPrintable++
+		}
+		// Check for high byte values that might indicate binary
+		if b == 127 || (b > 127 && b < 160) {
+			nonPrintable++
+		}
+	}
+
+	// If more than 30% of checked bytes are non-printable, consider it binary
+	threshold := float64(checkLen) * 0.3
+	return float64(nonPrintable) > threshold
+}
+
 // generatePreview creates a preview string for the content
 func (qm *StackManager) generatePreview(data []byte) string {
+	// Check if binary
+	if isBinary(data) {
+		return "[binary content]"
+	}
+
 	// Use first 100 bytes for preview
 	previewLen := len(data)
 	if previewLen > 100 {
@@ -124,7 +183,7 @@ func (qm *StackManager) generatePreview(data []byte) string {
 	}
 
 	if previewStr == "" {
-		previewStr = "[binary content]"
+		previewStr = "[empty]"
 	}
 
 	return previewStr
@@ -188,15 +247,20 @@ func (qm *StackManager) List() ([]*StackItem, error) {
 		}
 
 		filePath := file.Name()
-		preview, err := qm.generatePreviewFromFile(filePath)
+		preview, binary, size, err := qm.generateMetadataFromFile(filePath)
 		if err != nil {
 			preview = filename // Fallback to filename
+			binary = false
+			size = 0
 		}
 
 		items = append(items, &StackItem{
 			Timestamp: timestamp,
 			FilePath:  filePath,
 			Preview:   preview,
+			IsBinary:  binary,
+			Size:      size,
+			SHA256:    "", // SHA256 calculated lazily when viewing
 		})
 	}
 
@@ -224,6 +288,38 @@ func (qm *StackManager) generatePreviewFromFile(filePath string) (string, error)
 	}
 
 	return qm.generatePreview(preview[:n]), nil
+}
+
+// generateMetadataFromFile reads file and returns lightweight metadata (preview, binary status, size)
+// Only reads first 4KB for efficiency - SHA256 is calculated lazily when viewing
+func (qm *StackManager) generateMetadataFromFile(filePath string) (preview string, binary bool, size int64, err error) {
+	// Get file info for size without reading content
+	fileInfo, err := fs.Stat(qm.fs, filePath)
+	if err != nil {
+		return "", false, 0, err
+	}
+	size = fileInfo.Size()
+
+	// Read only first 4KB for preview and binary detection
+	file, err := qm.fs.Open(filePath)
+	if err != nil {
+		return "", false, size, err
+	}
+	defer file.Close()
+
+	// Read up to 4KB for preview/detection
+	previewData := make([]byte, 4096)
+	n, err := file.Read(previewData)
+	if err != nil && err != io.EOF {
+		return "", false, size, err
+	}
+	previewData = previewData[:n]
+
+	// Generate preview and detect binary
+	preview = qm.generatePreview(previewData)
+	binary = isBinary(previewData)
+
+	return preview, binary, size, nil
 }
 
 // Get returns the item at the specified index (0 = top of stack, newest)

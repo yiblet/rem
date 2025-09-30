@@ -230,9 +230,12 @@ func (c *CLI) launchTUI() error {
 		}
 
 		tuiItem := &tui.StackItem{
-			Content: contentReader,
-			Preview: sItem.Preview,
-			ViewPos: 0,
+			Content:  contentReader,
+			Preview:  sItem.Preview,
+			ViewPos:  0,
+			IsBinary: sItem.IsBinary,
+			Size:     sItem.Size,
+			SHA256:   sItem.SHA256,
 		}
 		tuiItems = append(tuiItems, tuiItem)
 	}

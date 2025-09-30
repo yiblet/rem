@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"regexp"
@@ -64,6 +66,9 @@ type StackItem struct {
 	SearchPattern string   // current search pattern
 	SearchMatches []int    // line numbers with matches
 	SearchIndex   int      // current match index (-1 if no search active)
+	IsBinary      bool     // true if content is binary
+	Size          int64    // size in bytes (useful for binary files)
+	SHA256        string   // SHA256 hash (for binary files)
 }
 
 // GetFullContent reads the entire content from the ReadSeekCloser
@@ -102,6 +107,21 @@ func (q *StackItem) UpdateWrappedLines(width, height int) error {
 		return nil
 	}
 
+	// Handle binary content specially
+	if q.IsBinary {
+		// Calculate SHA256 lazily if not already done
+		if q.SHA256 == "" {
+			if err := q.calculateSHA256(); err != nil {
+				// If we can't calculate SHA256, just show without it
+				q.SHA256 = "Error calculating hash"
+			}
+		}
+		// Create a formatted display for binary files
+		q.Lines = q.formatBinaryInfo()
+		q.CachedWidth = width
+		return nil
+	}
+
 	content, err := q.GetFullContent()
 	if err != nil {
 		return err
@@ -115,6 +135,78 @@ func (q *StackItem) UpdateWrappedLines(width, height int) error {
 	// Re-run search if we have an active pattern
 	if q.SearchPattern != "" {
 		q.performSearch(q.SearchPattern)
+	}
+
+	return nil
+}
+
+// formatBinaryInfo creates a formatted display for binary files
+func (q *StackItem) formatBinaryInfo() []string {
+	lines := []string{
+		"",
+		"═══════════════════════════════════════",
+		"           BINARY FILE",
+		"═══════════════════════════════════════",
+		"",
+	}
+
+	// Add file size
+	lines = append(lines, fmt.Sprintf("Size: %s", formatBytes(q.Size)))
+	lines = append(lines, "")
+
+	// Add SHA256 hash
+	if q.SHA256 != "" {
+		lines = append(lines, "SHA256:")
+		lines = append(lines, q.SHA256)
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, "This content cannot be displayed as text.")
+	lines = append(lines, "")
+
+	return lines
+}
+
+// formatBytes formats byte count into human-readable string
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d bytes", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// calculateSHA256 computes the SHA256 hash of the content by streaming
+func (q *StackItem) calculateSHA256() error {
+	// Save current position
+	currentPos, err := q.Content.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
+
+	// Seek to beginning
+	if _, err := q.Content.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	// Calculate SHA256 by streaming (doesn't load entire file into memory)
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, q.Content); err != nil {
+		// Restore position before returning error
+		q.Content.Seek(currentPos, io.SeekStart)
+		return err
+	}
+
+	q.SHA256 = hex.EncodeToString(hasher.Sum(nil))
+
+	// Restore original position
+	if _, err := q.Content.Seek(currentPos, io.SeekStart); err != nil {
+		return err
 	}
 
 	return nil

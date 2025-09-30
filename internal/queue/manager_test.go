@@ -431,3 +431,116 @@ func TestStackManager_Search_EmptyStack(t *testing.T) {
 		t.Errorf("Expected 0 results in empty stack, got %d", len(results))
 	}
 }
+
+func TestIsBinary(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected bool
+	}{
+		{
+			name:     "Plain text",
+			data:     []byte("Hello, world! This is plain text."),
+			expected: false,
+		},
+		{
+			name:     "Text with newlines",
+			data:     []byte("Line 1\nLine 2\nLine 3\n"),
+			expected: false,
+		},
+		{
+			name:     "Empty data",
+			data:     []byte{},
+			expected: false,
+		},
+		{
+			name:     "Binary with null bytes",
+			data:     []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05},
+			expected: true,
+		},
+		{
+			name:     "Binary with control characters",
+			data:     []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+			expected: true,
+		},
+		{
+			name:     "Text with tabs and spaces",
+			data:     []byte("Hello\tWorld\n\tIndented line\n"),
+			expected: false,
+		},
+		{
+			name:     "Invalid UTF-8",
+			data:     []byte{0xFF, 0xFE, 0xFD},
+			expected: true,
+		},
+		{
+			name:     "Mixed content - mostly text",
+			data:     append([]byte("Text content "), 0x01, 0x02),
+			expected: false,
+		},
+		{
+			name:     "Mixed content - mostly binary",
+			data:     append(make([]byte, 100), []byte("text")...),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isBinary(tt.data)
+			if result != tt.expected {
+				t.Errorf("isBinary(%q) = %v, expected %v", tt.name, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStackManager_BinaryDetection(t *testing.T) {
+	memFS := NewMemoryFileSystem()
+	qm, err := NewStackManager(memFS)
+	if err != nil {
+		t.Fatalf("Failed to create stack manager: %v", err)
+	}
+
+	// Test with binary content
+	binaryData := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+	item, err := qm.Push(strings.NewReader(string(binaryData)))
+	if err != nil {
+		t.Fatalf("Failed to push binary content: %v", err)
+	}
+
+	if !item.IsBinary {
+		t.Error("Expected binary content to be detected as binary")
+	}
+
+	if item.Preview != "[binary content]" {
+		t.Errorf("Expected preview '[binary content]', got '%s'", item.Preview)
+	}
+
+	if item.Size != int64(len(binaryData)) {
+		t.Errorf("Expected size %d, got %d", len(binaryData), item.Size)
+	}
+
+	if item.SHA256 == "" {
+		t.Error("Expected SHA256 hash to be calculated for binary content")
+	}
+
+	// Test with text content
+	textData := "This is plain text content"
+	textItem, err := qm.Push(strings.NewReader(textData))
+	if err != nil {
+		t.Fatalf("Failed to push text content: %v", err)
+	}
+
+	if textItem.IsBinary {
+		t.Error("Expected text content to not be detected as binary")
+	}
+
+	if textItem.SHA256 != "" {
+		t.Error("Expected SHA256 to be empty for text content")
+	}
+
+	if textItem.Size != int64(len(textData)) {
+		t.Errorf("Expected size %d, got %d", len(textData), textItem.Size)
+	}
+}
