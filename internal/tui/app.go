@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.design/x/clipboard"
 )
 
 // PaneType represents which pane is focused
@@ -57,6 +59,10 @@ type KeyPressMsg struct {
 
 func (KeyPressMsg) isAppMsg() {}
 
+type flashExpiredMsg struct{}
+
+func (flashExpiredMsg) isAppMsg() {}
+
 // AppModel orchestrates all sub-models
 type AppModel struct {
 	Width       int      // Window width
@@ -75,6 +81,10 @@ type AppModel struct {
 	// Number input mode for multi-digit commands like "10j"
 	NumberBuffer string   // Accumulates digits
 	BufferPane   PaneType // Which pane the buffer applies to
+
+	// Flash message for temporary notifications
+	FlashMessage string    // The message to display
+	FlashExpiry  time.Time // When the message should disappear
 }
 
 // NewAppModel creates a new app model with all sub-models
@@ -107,6 +117,11 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleWindowResize(m)
 	case tea.KeyMsg:
 		return a.handleKeyPress(m)
+	case flashExpiredMsg:
+		// Clear flash message when it expires
+		a.FlashMessage = ""
+		a.FlashExpiry = time.Time{}
+		return a, nil
 	}
 
 	return a, nil
@@ -346,6 +361,9 @@ func (a *AppModel) handleNormalModeKeys(key string) (tea.Model, tea.Cmd) {
 		// Enter help mode
 		a.CurrentMode = HelpMode
 		return a, nil
+	case "c":
+		// Copy content to clipboard
+		return a, a.copyToClipboard()
 	case "tab":
 		// Toggle between left and right pane
 		if a.ActivePane == LeftPane {
@@ -565,6 +583,16 @@ func (a *AppModel) View() string {
 func renderStatusLine(model AppModel) string {
 	var statusLine string
 
+	// Prioritize flash message if active and not expired
+	if model.FlashMessage != "" && time.Now().Before(model.FlashExpiry) {
+		statusLine = model.FlashMessage
+		// Use green color for flash messages
+		statusStyle := lipgloss.NewStyle().
+			Width(model.Width).
+			Foreground(lipgloss.Color("10"))
+		return statusStyle.Render(statusLine)
+	}
+
 	if model.NumberBuffer != "" {
 		// Show number buffer input
 		statusLine = fmt.Sprintf("%s", model.NumberBuffer)
@@ -625,6 +653,9 @@ CONTENT VIEWING:
   Ctrl+d      Page down (right pane)
   Ctrl+b      Page up (full screen)
   Ctrl+f      Page down (full screen)
+
+CLIPBOARD:
+  c           Copy current item content to clipboard
 
 HISTORY MANAGEMENT:
   d           Delete selected item (left pane only)
@@ -827,6 +858,47 @@ func (a *AppModel) executeCommand(multiplier int, key string, pane PaneType) (te
 	}
 
 	return a, nil
+}
+
+// setFlashMessage sets a flash message that will disappear after the specified duration
+func (a *AppModel) setFlashMessage(message string, duration time.Duration) tea.Cmd {
+	a.FlashMessage = message
+	a.FlashExpiry = time.Now().Add(duration)
+	return tea.Tick(duration, func(t time.Time) tea.Msg {
+		return flashExpiredMsg{}
+	})
+}
+
+// copyToClipboard copies the current item's content to the clipboard
+func (a *AppModel) copyToClipboard() tea.Cmd {
+	// Get the currently selected item
+	if a.LeftPane.Selected >= len(a.Items) || len(a.Items) == 0 {
+		return a.setFlashMessage("No item selected", 2*time.Second)
+	}
+
+	selectedItem := a.Items[a.LeftPane.Selected]
+	if selectedItem == nil {
+		return a.setFlashMessage("No item selected", 2*time.Second)
+	}
+
+	// Get the full content
+	content, err := selectedItem.GetFullContent()
+	if err != nil {
+		return a.setFlashMessage(fmt.Sprintf("Error reading content: %v", err), 2*time.Second)
+	}
+
+	// Initialize clipboard
+	err = clipboard.Init()
+	if err != nil {
+		return a.setFlashMessage(fmt.Sprintf("Error initializing clipboard: %v", err), 2*time.Second)
+	}
+
+	// Write to clipboard
+	clipboard.Write(clipboard.FmtText, []byte(content))
+
+	// Show success message with byte count
+	byteCount := len(content)
+	return a.setFlashMessage(fmt.Sprintf("Copied %d bytes to clipboard", byteCount), 2*time.Second)
 }
 
 // SetItems updates the items list in the app model

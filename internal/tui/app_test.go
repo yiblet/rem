@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -1147,5 +1148,173 @@ func TestAppModel_DeleteModeCancelWithEscape(t *testing.T) {
 	}
 	if len(updatedApp.Items) != 2 {
 		t.Errorf("Expected 2 items after canceling with escape, got %d", len(updatedApp.Items))
+	}
+}
+
+func TestAppModel_CopyToClipboard(t *testing.T) {
+	testContent := "Test clipboard content"
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = LeftPane
+
+	// Press 'c' to copy to clipboard
+	newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updatedApp := newModel.(*AppModel)
+
+	// Should return a command (the flash message timer)
+	if cmd == nil {
+		t.Error("Expected a command to be returned for flash message")
+	}
+
+	// Flash message should be set
+	if updatedApp.FlashMessage == "" {
+		t.Error("Expected flash message to be set after copying")
+	}
+
+	// Flash message should contain byte count
+	expectedByteCount := len(testContent)
+	expectedMessage := fmt.Sprintf("Copied %d bytes to clipboard", expectedByteCount)
+	if updatedApp.FlashMessage != expectedMessage {
+		t.Errorf("Expected flash message '%s', got '%s'", expectedMessage, updatedApp.FlashMessage)
+	}
+
+	// Flash expiry should be set
+	if updatedApp.FlashExpiry.IsZero() {
+		t.Error("Expected flash expiry to be set")
+	}
+}
+
+func TestAppModel_CopyFromRightPane(t *testing.T) {
+	testContent := "Right pane test content"
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item"},
+	}
+
+	model := NewAppModel(items)
+	model.ActivePane = RightPane // Focus on right pane
+
+	// Press 'c' to copy to clipboard
+	newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updatedApp := newModel.(*AppModel)
+
+	// Should still copy from the currently selected item
+	if cmd == nil {
+		t.Error("Expected a command to be returned for flash message")
+	}
+
+	if updatedApp.FlashMessage == "" {
+		t.Error("Expected flash message to be set after copying from right pane")
+	}
+
+	expectedByteCount := len(testContent)
+	expectedMessage := fmt.Sprintf("Copied %d bytes to clipboard", expectedByteCount)
+	if updatedApp.FlashMessage != expectedMessage {
+		t.Errorf("Expected flash message '%s', got '%s'", expectedMessage, updatedApp.FlashMessage)
+	}
+}
+
+func TestAppModel_CopyWithNoItems(t *testing.T) {
+	// Empty items list
+	model := NewAppModel([]*StackItem{})
+
+	// Press 'c' to copy
+	newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updatedApp := newModel.(*AppModel)
+
+	// Should set an error flash message
+	if cmd == nil {
+		t.Error("Expected a command to be returned for flash message")
+	}
+
+	if updatedApp.FlashMessage == "" {
+		t.Error("Expected flash message to be set when copying with no items")
+	}
+
+	if !strings.Contains(updatedApp.FlashMessage, "No item selected") {
+		t.Errorf("Expected 'No item selected' message, got '%s'", updatedApp.FlashMessage)
+	}
+}
+
+func TestAppModel_FlashMessageExpires(t *testing.T) {
+	testContent := "Test content"
+	items := []*StackItem{
+		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item"},
+	}
+
+	model := NewAppModel(items)
+
+	// Copy to clipboard to set flash message
+	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updatedApp := newModel.(*AppModel)
+
+	// Flash message should be set
+	if updatedApp.FlashMessage == "" {
+		t.Fatal("Flash message should be set after copy")
+	}
+
+	// Simulate flash expiry message
+	newModel, _ = updatedApp.Update(flashExpiredMsg{})
+	updatedApp = newModel.(*AppModel)
+
+	// Flash message should be cleared
+	if updatedApp.FlashMessage != "" {
+		t.Errorf("Expected flash message to be cleared after expiry, got '%s'", updatedApp.FlashMessage)
+	}
+
+	// Flash expiry should be reset
+	if !updatedApp.FlashExpiry.IsZero() {
+		t.Error("Expected flash expiry to be reset after expiry")
+	}
+}
+
+func TestAppModel_FlashMessageInStatusLine(t *testing.T) {
+	model := NewAppModel([]*StackItem{})
+	model.Width = 120
+
+	// Set a flash message manually
+	model.FlashMessage = "Test flash message"
+	model.FlashExpiry = time.Now().Add(2 * time.Second)
+
+	// Render status line
+	statusLine := renderStatusLine(model)
+
+	// Should show flash message
+	if !strings.Contains(statusLine, "Test flash message") {
+		t.Errorf("Expected status line to contain flash message, got '%s'", statusLine)
+	}
+
+	// Flash message should be shown with green color styling
+	// (We can't directly test the color, but we can verify the message is there)
+}
+
+func TestAppModel_FlashMessagePriority(t *testing.T) {
+	items := []*StackItem{{
+		Content: NewStringReadSeekCloser("Test content"),
+		Preview: "Test item",
+	}}
+	model := NewAppModel(items)
+	model.Width = 120
+
+	// Set up search to have a pattern
+	model.Search.Update(StartSearchMsg{})
+	model.Search.Update(UpdateSearchInputMsg{Input: "test"})
+	model.Search.Update(ExecuteSearchMsg{})
+
+	// Set flash message
+	model.FlashMessage = "Flash message"
+	model.FlashExpiry = time.Now().Add(2 * time.Second)
+
+	// Render status line
+	statusLine := renderStatusLine(model)
+
+	// Flash message should take priority over search status
+	if !strings.Contains(statusLine, "Flash message") {
+		t.Error("Expected flash message to have priority in status line")
+	}
+	if strings.Contains(statusLine, "Pattern:") {
+		t.Error("Search status should not be shown when flash message is active")
 	}
 }
