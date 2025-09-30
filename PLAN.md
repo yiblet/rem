@@ -108,7 +108,7 @@
 #### 3.2 Individual Item Deletion (TUI)
 - Add keybinding for deletion (e.g., 'd' or 'Delete')
 - Confirmation dialog for safety
-- Update stack indices after deletion
+- Update queue indices after deletion
 - Refresh display immediately
 
 #### 3.3 Search Functionality
@@ -127,12 +127,12 @@
 
 **Phase 3 Implementation Summary:**
 - ✅ **Clear Command**: Added `rem clear` CLI command with interactive confirmation and `--force` flag
-- ✅ **Stack Manager Clear()**: Implemented method to delete all history files
+- ✅ **Queue Manager Clear()**: Implemented method to delete all history files
 - ✅ **TUI Item Deletion**: Added 'd' keybinding in left pane to enter delete confirmation modal
 - ✅ **Delete Confirmation Modal**: Modal UI overlay with centered dialog and red border
-- ✅ **Stack Index Management**: Automatic cursor adjustment after deletion (handles last item, empty stack)
+- ✅ **Queue Index Management**: Automatic cursor adjustment after deletion (handles last item, empty queue)
 - ✅ **Search Command**: Added `rem search <pattern>` with regex support, `-i` for index-only, `-a` for all matches
-- ✅ **Stack Manager Search()**: Regex-based search across all stack items with SearchResult type
+- ✅ **Queue Manager Search()**: Regex-based search across all queue items with SearchResult type
 - ✅ **Comprehensive Testing**: Unit tests for clear, search, and TUI deletion with edge cases
 - ✅ **Help Documentation**: Updated TUI help screen to document 'd' key for deletion
 
@@ -268,7 +268,7 @@ Each phase must include high-level test descriptions to ensure correctness of th
 - When the TUI exits and is re-launched, deleted items reappear
 - For disk-persistent deletion, users should use the CLI's `rem clear` command or manually manage history files
 
-**Future Enhancement**: To make TUI deletions persistent, the architecture would need to be updated to pass the StackManager or a delete callback function to the TUI, allowing it to call `StackManager.Delete(index)` directly.
+**Future Enhancement**: To make TUI deletions persistent, the architecture would need to be updated to pass the QueueManager or a delete callback function to the TUI, allowing it to call `QueueManager.Delete(index)` directly.
 
 ---
 

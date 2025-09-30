@@ -339,7 +339,7 @@ func (a *AppModel) handleDeleteModeKeys(key string) (tea.Model, tea.Cmd) {
 
 			// Adjust cursor position if needed
 			if len(a.Items) == 0 {
-				// Stack is now empty
+				// Queue is now empty
 				a.LeftPane.Cursor = 0
 				a.LeftPane.Selected = 0
 			} else if a.LeftPane.Selected >= len(a.Items) {
@@ -660,7 +660,7 @@ func renderStatusLine(model AppModel) string {
 
 // renderHelpView renders the help content as a single pane (pure function)
 func renderHelpView(model AppModel) string {
-	helpContent := `rem - Enhanced Clipboard Stack Manager
+	helpContent := `rem - Enhanced Clipboard Queue Manager
 
 NAVIGATION COMMANDS:
   j, ↓        Move down (left pane: next item, right pane: scroll down)
@@ -690,10 +690,10 @@ CLIPBOARD:
 HISTORY MANAGEMENT:
   d           Delete selected item (left pane only)
 
-STACK BEHAVIOR:
-  Index 0     Most recent item (top of stack)
+QUEUE BEHAVIOR:
+  Index 0     Most recent item (top of queue)
   Index 1+    Older items in reverse chronological order
-  Max 20      Stack automatically removes oldest items
+  Max 20      Queue automatically removes oldest items
 
 GLOBAL COMMANDS:
   q           Quit

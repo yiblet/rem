@@ -1,118 +1,299 @@
-# rem - Enhanced Clipboard Stack Manager
+# rem - Enhanced Clipboard Queue Manager
 
-A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a persistent LIFO stack of clipboard history.
+A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a persistent LIFO queue of clipboard history.
 
 ## Overview
 
-`rem` maintains a configurable history of clipboard entries, allowing you to access and manage the last 255 items copied to your clipboard. It provides an intuitive CLI interface with dual-pane viewing and seamless integration with your existing clipboard workflow.
+`rem` maintains a configurable history of clipboard entries, allowing you to access and manage up to 255 items (configurable). It provides an intuitive interactive TUI with dual-pane viewing, powerful search capabilities, and seamless integration with your existing clipboard workflow.
 
 ## Features
 
-- **Persistent Stack**: Maintains the last 255 clipboard entries in a local config folder
-- **Interactive Viewer**: Dual-pane CLI interface for browsing clipboard history
-- **Seamless Integration**: Works alongside existing `pbcopy`/`pbpaste` workflows
-- **Multiple Input Methods**: Accept input from pipes, clipboard, or direct commands
+- **Persistent LIFO Queue**: Maintains clipboard history in local storage with newest items at index 0
+- **Interactive TUI Viewer**: Dual-pane interface with vim-style navigation and search
+- **Configurable History**: Set custom history limits and storage locations
+- **Multiple Input Methods**: Accept input from stdin, files, or clipboard
+- **Multiple Output Methods**: Output to stdout, files, or clipboard
+- **Advanced Search**: Regex-based search across entire history
+- **History Management**: Clear all history or delete individual items
+- **Binary File Support**: Detects and handles binary content appropriately
+- **Environment Variables**: Customize history location via `REM_HISTORY`
 
 ## Installation
 
 ```bash
-# Installation instructions will be added once implementation is complete
+# Clone the repository
+git clone https://github.com/yiblet/rem
+cd rem
+
+# Build the binary
+go build -o rem
+
+# Optional: Move to your PATH
+sudo mv rem /usr/local/bin/
+```
+
+## Quick Start
+
+```bash
+# Store some content
+echo "Hello, world!" | rem store
+echo "Second item" | rem store
+
+# Launch interactive viewer
+rem get
+
+# Or access items directly
+rem get 0        # Output most recent item
+rem get -c 1     # Copy second item to clipboard
 ```
 
 ## Usage
 
-### View Clipboard Stack
+### Store Operations (Enqueue to Queue)
 
 ```bash
-# Launch interactive dual-pane viewer
-rem get
-# or simply
-rem
+# Store from stdin
+echo "content" | rem store
+cat file.txt | rem store
+
+# Store from files (supports multiple files)
+rem store file.txt
+rem store file1.txt file2.txt file3.txt
+
+# Store from clipboard
+rem store -c
 ```
 
-The interactive viewer displays:
-- **Left Pane**: Numbered list of clipboard entries showing the beginning of each entry
-- **Right Pane**: Full content of the selected entry with paging support
-
-### Access Specific Entry
+### Get Operations (Access Queue)
 
 ```bash
-# Output the nth entry from the stack (0-indexed)
-rem get 0     # Outputs the most recent entry (top of stack)
-rem get 1     # Outputs the second most recent entry
-rem get 5     # Outputs the 6th most recent entry
+# Interactive TUI viewer (most common usage)
+rem get
+
+# Output to stdout
+rem get 0     # Most recent item (top of queue)
+rem get 1     # Second most recent item
+rem get 5     # Sixth most recent item
 
 # Copy to clipboard
-rem get -c 0  # Copy most recent entry to clipboard
-rem get -c 2  # Copy third most recent entry to clipboard
+rem get -c 0  # Copy most recent to clipboard
+rem get -c 2  # Copy third item to clipboard
 
 # Save to file
-rem get 0 output.txt  # Save most recent entry to file
+rem get 0 output.txt  # Save most recent to file
+rem get 2 data.txt    # Save third item to file
 ```
 
-### Add to Stack
+### Configuration Management
 
 ```bash
-# Push content from stdin to top of stack
-echo "test content" | rem store
+# List all configuration settings
+rem config list
 
-# Push file content to stack
-rem store filename.txt
+# Get specific configuration value
+rem config get history-limit
+rem config get history-location
 
-# Push current clipboard content to stack
-rem store -c
+# Set configuration values
+rem config set history-limit 100      # Set max items to 100
+rem config set history-limit 50       # Set max items to 50
+rem config set show-binary true       # Show binary file previews
 ```
 
-## Stack Behavior (LIFO)
-
-- **Position 0**: Top of stack - most recently added item
-- **Positions 1-254**: Historical entries in reverse chronological order (newer items push older ones down)
-- **Automatic Management**: Oldest entries are automatically removed when the stack exceeds 255 items
-- **LIFO (Last In, First Out)**: Most recent content is always accessible at index 0
-
-## Configuration
-
-The clipboard history is stored in a local configuration folder, typically located at:
-- macOS: `~/.config/rem/`
-- Linux: `~/.config/rem/`
-
-## Examples
+### Search History
 
 ```bash
-# Push content to stack from stdin
-echo "Hello World" | rem store
+# Search for pattern (shows first match)
+rem search 'error'
+rem search 'function.*main'
 
-# Push another item
-echo "Second entry" | rem store
+# Show only index of first match
+rem search -i 'pattern'
 
-# View the stack interactively
-rem get
-# or simply: rem
+# Show all matching items
+rem search -a 'TODO'
+```
 
-# Get specific entries without interactive mode
-rem get 0     # Outputs "Second entry" (most recent)
-rem get 1     # Outputs "Hello World" (previous)
+### History Management
 
-# Push content from clipboard
-rem store -c
+```bash
+# Clear all history (prompts for confirmation)
+rem clear
 
-# Push content from file
-rem store myfile.txt
+# Clear without confirmation
+rem clear --force
+```
 
-# Copy stack item to clipboard
-rem get -c 0  # Copy top of stack to clipboard
+## Interactive TUI
+
+The TUI provides a powerful dual-pane interface for browsing and searching history:
+
+### Layout
+- **Left Pane (25 chars)**: List view of all queue items with previews
+- **Right Pane**: Full content viewer with text wrapping and search
+- **Status Line**: Shows current mode, search status, and help info
+
+### Keyboard Shortcuts
+
+#### Global Commands
+- `q` - Quit the viewer
+- `z` - Toggle help screen
+- `Tab` or `h`/`l` or `←`/`→` - Switch between panes
+
+#### Left Pane (List Navigation)
+- `j`/`k` or `↓`/`↑` - Move cursor down/up
+- `g` - Jump to top of list
+- `G` - Jump to bottom of list
+- `Ctrl+d` - Page down (half page)
+- `Ctrl+u` - Page up (half page)
+- `d` - Delete current item (shows confirmation dialog)
+- Number + `j`/`k` - Move by N items (e.g., `5j` moves down 5 items)
+
+#### Right Pane (Content Viewing)
+- `j`/`k` or `↓`/`↑` - Scroll down/up one line
+- `g` - Jump to top of content
+- `G` - Jump to bottom of content
+- `Ctrl+d` - Scroll down half page
+- `Ctrl+u` - Scroll up half page
+- `Ctrl+f` - Scroll down full page
+- `Ctrl+b` - Scroll up full page
+- `/` - Enter search mode
+- `n` - Jump to next search match
+- `N` - Jump to previous search match
+- Number + `j`/`k` - Scroll by N lines (e.g., `10j` scrolls down 10 lines)
+
+#### Search Mode
+- Type pattern and press `Enter` to search
+- `Esc` to cancel search
+- Search highlights all matches with current match emphasized
+- Each item remembers its own scroll position and search state
+
+## Queue Behavior (LIFO)
+
+- **Position 0**: Top of queue - most recently added item
+- **Positions 1-254**: Historical entries in reverse chronological order
+- **Automatic Management**: Oldest entries removed when exceeding configured limit (default 255)
+- **LIFO (Last In, First Out)**: Most recent content always at index 0
+
+## Configuration and Storage
+
+### History Location
+
+The history is stored with the following precedence:
+1. `--history` CLI flag (highest priority)
+2. `REM_HISTORY` environment variable
+3. Configuration file setting
+4. Default: `~/.config/rem/history/` (lowest priority)
+
+```bash
+# Set custom location via environment variable
+export REM_HISTORY="$HOME/my-custom-location"
+rem store < file.txt
+
+# Or use CLI flag
+rem --history /path/to/history store < file.txt
+```
+
+### Directory Structure
+
+```
+~/.config/rem/
+├── history/                          # Queue content storage
+│   ├── 2025-09-29T10-15-30.123456-07-00.rem
+│   ├── 2025-09-29T10-16-45.789012-07-00.rem
+│   └── ...
+└── config.yaml                       # Configuration file
+```
+
+### Configuration File
+
+Located at `~/.config/rem/config.yaml`:
+
+```yaml
+history-limit: 255        # Maximum number of items (1-999)
+show-binary: false        # Show binary file metadata
+history-location: ""      # Custom history directory (optional)
+```
+
+## Complete Examples
+
+```bash
+# Store workflow
+echo "First item" | rem store
+echo "Second item" | rem store
+rem store code.go
+rem store -c  # Store current clipboard
+
+# Access workflow
+rem get                    # Browse interactively
+rem get 0                  # Output most recent
+rem get 1 > saved.txt      # Save second item
+rem get -c 2               # Copy third item to clipboard
+
+# Search workflow
+rem search 'func.*main'    # Find first match
+rem search -a 'TODO'       # Find all matches
+rem search -i 'error'      # Get index only
+
+# Configuration workflow
+rem config set history-limit 100
+rem config get history-limit
+rem config list
+
+# Maintenance
+rem clear                  # Clear with confirmation
+rem clear --force          # Clear without confirmation
 ```
 
 ## Use Cases
 
-- **Code Development**: Keep track of multiple code snippets while working
-- **Documentation**: Manage multiple text passages when writing
-- **Data Analysis**: Maintain a history of copied data or commands
+- **Code Development**: Store and retrieve code snippets, error messages, and API responses
+- **Documentation**: Manage multiple text passages when writing docs
+- **Data Analysis**: Keep history of SQL queries, log snippets, or data samples
+- **Debugging**: Store stack traces, error logs, and debug output
 - **General Productivity**: Never lose that important text you copied earlier
+- **Command Line Workflows**: Build pipelines with rem as an intermediate buffer
+
+## Project Status
+
+rem is production-ready with all core features implemented:
+- ✅ Complete CLI interface with store/get/config/clear/search commands
+- ✅ Interactive TUI with dual-pane viewer and vim-style navigation
+- ✅ Full search functionality with regex support and highlighting
+- ✅ Configurable history limits and storage locations
+- ✅ Binary file detection and handling
+- ✅ Individual item deletion from TUI
+- ✅ Environment variable support
+- ✅ Comprehensive test coverage
+
+## Development
+
+```bash
+# Run tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific package tests
+go test ./internal/queue
+go test ./internal/tui -v
+
+# Build
+go build -o rem
+
+# Run demo (populates queue with test data)
+go run ./cmd/demo/
+```
 
 ## Contributing
 
-[Contributing guidelines will be added]
+Contributions are welcome! Please see the project structure:
+- `internal/queue/` - Queue management and persistence
+- `internal/cli/` - Command-line interface
+- `internal/tui/` - Interactive terminal UI
+- `internal/remfs/` - Filesystem abstraction
+- `internal/config/` - Configuration management
 
 ## License
 

@@ -661,7 +661,7 @@ func TestAppModel_HelpModeView(t *testing.T) {
 	}
 
 	// Should contain help content
-	if !strings.Contains(view, "rem - Enhanced Clipboard Stack Manager") {
+	if !strings.Contains(view, "rem - Enhanced Clipboard Queue Manager") {
 		t.Error("Expected help view to contain help title")
 	}
 
@@ -1104,7 +1104,7 @@ func TestAppModel_DeleteAllItems(t *testing.T) {
 
 	// Cursor should be at 0
 	if updatedApp.LeftPane.Cursor != 0 {
-		t.Errorf("Expected cursor at 0 when stack is empty, got %d", updatedApp.LeftPane.Cursor)
+		t.Errorf("Expected cursor at 0 when queue is empty, got %d", updatedApp.LeftPane.Cursor)
 	}
 }
 

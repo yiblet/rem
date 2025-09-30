@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-rem is a LIFO clipboard stack manager that enhances `pbcopy`/`pbpaste` with persistent clipboard history. It provides both CLI commands and an interactive TUI for managing clipboard content.
+rem is a LIFO clipboard queue manager that enhances `pbcopy`/`pbpaste` with persistent clipboard history. It provides both CLI commands and an interactive TUI for managing clipboard content.
 
 ## Development Commands
 
@@ -33,11 +33,11 @@ go test ./internal/queue
 ./rem store filename.txt       # Store from file
 ./rem store -c                 # Store from clipboard
 ./rem get                      # Launch interactive TUI
-./rem get 0                    # Get top stack item
+./rem get 0                    # Get top queue item
 ./rem get -c 1                 # Copy second item to clipboard
 
 # Demo commands for testing
-go run ./cmd/demo/             # Populate stack with test data
+go run ./cmd/demo/             # Populate queue with test data
 go run ./cmd/test-integration/ # Test TUI rendering
 ```
 
@@ -46,31 +46,31 @@ go run ./cmd/test-integration/ # Test TUI rendering
 ### Core Components
 
 **4-Package Internal Architecture:**
-- `internal/queue/` - LIFO stack management with file persistence
+- `internal/queue/` - LIFO queue management with file persistence
 - `internal/cli/` - Command-line interface using go-arg
 - `internal/tui/` - Interactive dual-pane TUI using Bubble Tea
 - `internal/remfs/` - fs.FS abstraction for testable filesystem operations
 
 ### Key Design Principles
 
-**LIFO Stack Model**: Items are stored newest-first (index 0 = most recent). The stack auto-cleans after 255 items (DefaultMaxStackSize).
+**LIFO Queue Model**: Items are stored newest-first (index 0 = most recent). The queue auto-cleans after 255 items (DefaultMaxQueueSize).
 
 **Stream-Based Content**: All content is modeled as `io.ReadSeekCloser` for memory efficiency and consistent interfaces across input sources.
 
 **fs.FS Abstraction**: The `remfs` package provides a testable filesystem interface rooted at `~/.config/rem/`, enabling in-memory testing.
 
 **Legacy Compatibility**: Type aliases maintain backward compatibility:
-- `QueueManager` → `StackManager`
-- `QueueItem` → `StackItem`
-- `Enqueue()` → `Push()`
+- `StackManager` → `QueueManager`
+- `StackItem` → `QueueItem`
+- `Push()` → `Enqueue()`
 
 ### Data Flow
 
-**Storage Path**: Content → StackManager.Push() → ISO timestamp files in `~/.config/rem/content/`
+**Storage Path**: Content → QueueManager.Enqueue() → ISO timestamp files in `~/.config/rem/content/`
 
-**Retrieval Path**: StackManager.Get(index) → File reader → Stream content to CLI/TUI
+**Retrieval Path**: QueueManager.Get(index) → File reader → Stream content to CLI/TUI
 
-**TUI Integration**: CLI and TUI share the same StackManager, with TUI converting StackItems to UI-specific types.
+**TUI Integration**: CLI and TUI share the same QueueManager, with TUI converting QueueItems to UI-specific types.
 
 ### File Persistence
 
@@ -81,18 +81,18 @@ Content files use ISO timestamp names with microsecond precision for ordering:
 ├── 2025-09-28T10-16-45.789012-07-00.txt
 ```
 
-The newest files (latest timestamps) correspond to stack index 0.
+The newest files (latest timestamps) correspond to queue index 0.
 
 ## Important Implementation Details
 
 ### Testing Strategy
-- `internal/queue` has comprehensive tests for core stack operations
+- `internal/queue` has comprehensive tests for core queue operations
 - `internal/tui` tests UI rendering and dual-pane layout
 - Uses in-memory filesystem for isolated unit tests
 - Tests validate LIFO behavior and size limits
 
 ### Constants and Configuration
-- `DefaultMaxStackSize = 255` - Maximum items in stack before auto-cleanup
+- `DefaultMaxQueueSize = 255` - Maximum items in queue before auto-cleanup
 - Content directory: `content/` within rem config directory
 - Preview length: ~50 characters with truncation
 

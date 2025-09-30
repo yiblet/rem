@@ -49,8 +49,8 @@ func NewWithArgs(args *Args) (*CLI, error) {
 		return nil, fmt.Errorf("error loading configuration: %w", err)
 	}
 
-	// Create stack manager with configured history limit
-	sm, err := queue.NewStackManagerWithConfig(remFS, cfg.HistoryLimit)
+	// Create queue manager with configured history limit
+	sm, err := queue.NewQueueManagerWithConfig(remFS, cfg.HistoryLimit)
 	if err != nil {
 		return nil, fmt.Errorf("error creating queue manager: %w", err)
 	}
@@ -139,7 +139,7 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 
 	index := *cmd.Index
 
-	// Get item from stack
+	// Get item from queue
 	item, err := c.stackManager.Get(index)
 	if err != nil {
 		return fmt.Errorf("failed to get item at index %d: %w", index, err)
@@ -228,13 +228,13 @@ func (c *CLI) executeConfigList(configManager *config.ConfigManager, cmd *Config
 
 // launchTUI starts the interactive TUI
 func (c *CLI) launchTUI() error {
-	// Get items from stack
+	// Get items from queue
 	stackItems, err := c.stackManager.List()
 	if err != nil {
 		return fmt.Errorf("error listing queue items: %w", err)
 	}
 
-	// Convert stack items to TUI items
+	// Convert queue items to TUI items
 	var tuiItems []*tui.StackItem
 	for _, sItem := range stackItems {
 		// Get content reader
@@ -262,11 +262,11 @@ func (c *CLI) launchTUI() error {
 		tuiItems = append(tuiItems, tuiItem)
 	}
 
-	// If no items in stack, show a helpful message
+	// If no items in queue, show a helpful message
 	if len(tuiItems) == 0 {
-		fmt.Println("Stack is empty!")
+		fmt.Println("Queue is empty!")
 		fmt.Println()
-		fmt.Println("To add items to the stack:")
+		fmt.Println("To add items to the queue:")
 		fmt.Printf("  echo \"Hello World\" | rem store\n")
 		fmt.Printf("  rem store filename.txt\n")
 		fmt.Printf("  rem store -c  # from clipboard\n")
@@ -349,14 +349,14 @@ func (c *CLI) writeToFile(filename string, content []byte) error {
 
 // executeClear handles the 'rem clear' command
 func (c *CLI) executeClear(cmd *ClearCmd) error {
-	// Get current stack size
+	// Get current queue size
 	items, err := c.stackManager.List()
 	if err != nil {
 		return fmt.Errorf("failed to list items: %w", err)
 	}
 
 	if len(items) == 0 {
-		fmt.Println("Stack is already empty.")
+		fmt.Println("Queue is already empty.")
 		return nil
 	}
 
@@ -372,7 +372,7 @@ func (c *CLI) executeClear(cmd *ClearCmd) error {
 		}
 	}
 
-	// Clear the stack by deleting all history files
+	// Clear the queue by deleting all history files
 	if err := c.stackManager.Clear(); err != nil {
 		return fmt.Errorf("failed to clear history: %w", err)
 	}
@@ -383,14 +383,14 @@ func (c *CLI) executeClear(cmd *ClearCmd) error {
 
 // executeSearch handles the 'rem search' command
 func (c *CLI) executeSearch(cmd *SearchCmd) error {
-	// Get all items from stack
+	// Get all items from queue
 	items, err := c.stackManager.List()
 	if err != nil {
 		return fmt.Errorf("failed to list items: %w", err)
 	}
 
 	if len(items) == 0 {
-		return fmt.Errorf("stack is empty")
+		return fmt.Errorf("queue is empty")
 	}
 
 	// Search for pattern in items

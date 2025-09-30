@@ -14,7 +14,7 @@ func main() {
 	fmt.Println("Testing TUI Border Fix")
 	fmt.Println("=========================")
 
-	// Create filesystem and stack manager
+	// Create filesystem and queue manager
 	remFS, err := remfs.New()
 	if err != nil {
 		log.Fatalf("Error creating rem filesystem: %v", err)
@@ -22,23 +22,23 @@ func main() {
 
 	sm, err := queue.NewStackManager(remFS)
 	if err != nil {
-		log.Fatalf("Error creating stack manager: %v", err)
+		log.Fatalf("Error creating queue manager: %v", err)
 	}
 
-	// Get items from stack
-	stackItems, err := sm.List()
+	// Get items from queue
+	queueItems, err := sm.List()
 	if err != nil {
-		log.Fatalf("Error listing stack items: %v", err)
+		log.Fatalf("Error listing queue items: %v", err)
 	}
 
-	if len(stackItems) == 0 {
-		fmt.Println("No items in stack. Run 'go run ./cmd/demo/' first.")
+	if len(queueItems) == 0 {
+		fmt.Println("No items in queue. Run 'go run ./cmd/demo/' first.")
 		return
 	}
 
-	// Convert stack items to TUI items
+	// Convert queue items to TUI items
 	var tuiItems []*tui.StackItem
-	for _, sItem := range stackItems[:min(5, len(stackItems))] { // Take first 5 items
+	for _, sItem := range queueItems[:min(5, len(queueItems))] { // Take first 5 items
 		contentReader, err := sItem.GetContentReader(sm.FileSystem())
 		if err != nil {
 			fmt.Printf("Error getting content reader: %v\n", err)

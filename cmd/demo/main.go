@@ -10,9 +10,9 @@ import (
 )
 
 func main() {
-	fmt.Println("rem Stack Manager Demo")
+	fmt.Println("rem Queue Manager Demo")
 
-	// Create filesystem and stack manager
+	// Create filesystem and queue manager
 	remFS, err := remfs.New()
 	if err != nil {
 		log.Fatalf("Failed to create rem filesystem: %v", err)
@@ -20,7 +20,7 @@ func main() {
 
 	sm, err := queue.NewStackManager(remFS)
 	if err != nil {
-		log.Fatalf("Failed to create stack manager: %v", err)
+		log.Fatalf("Failed to create queue manager: %v", err)
 	}
 
 	// Show initial state
@@ -28,18 +28,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get size: %v", err)
 	}
-	fmt.Printf("Initial stack size: %d\n\n", size)
+	fmt.Printf("Initial queue size: %d\n\n", size)
 
 	// Add some test content
 	testContent := []string{
-		"Hello, World! This is the first item in our stack.",
+		"Hello, World! This is the first item in our queue.",
 		"package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, Go!\")\n}",
 		"#!/bin/bash\necho \"Starting script...\"\nfor i in {1..5}; do\n    echo \"Processing $i\"\ndone",
 		"SELECT * FROM users WHERE created_at > '2023-01-01' ORDER BY created_at DESC LIMIT 10;",
 		"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
 	}
 
-	fmt.Println("Adding items to stack:")
+	fmt.Println("Adding items to queue:")
 	for i, content := range testContent {
 		item, err := sm.Push(strings.NewReader(content))
 		if err != nil {
@@ -54,10 +54,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get final size: %v", err)
 	}
-	fmt.Printf("\nFinal stack size: %d\n\n", size)
+	fmt.Printf("\nFinal queue size: %d\n\n", size)
 
 	// List all items
-	fmt.Println("Stack contents (newest first - LIFO):")
+	fmt.Println("Queue contents (newest first - LIFO):")
 	items, err := sm.List()
 	if err != nil {
 		log.Fatalf("Failed to list items: %v", err)
@@ -87,5 +87,5 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nDemo complete! Stack stored in: ~/.config/rem/content/\n")
+	fmt.Printf("\nDemo complete! Queue stored in: ~/.config/rem/content/\n")
 }

@@ -6,23 +6,23 @@ import (
 
 // Args represents the top-level command structure
 type Args struct {
-	Store   *StoreCmd  `arg:"subcommand:store" help:"Push content to the stack"`
-	Get     *GetCmd    `arg:"subcommand:get" help:"Access content from the stack"`
+	Store   *StoreCmd  `arg:"subcommand:store" help:"Push content to the queue"`
+	Get     *GetCmd    `arg:"subcommand:get" help:"Access content from the queue"`
 	Config  *ConfigCmd `arg:"subcommand:config" help:"Manage rem configuration"`
-	Clear   *ClearCmd  `arg:"subcommand:clear" help:"Clear all history from the stack"`
+	Clear   *ClearCmd  `arg:"subcommand:clear" help:"Clear all history from the queue"`
 	Search  *SearchCmd `arg:"subcommand:search" help:"Search history for content matching a regex pattern"`
 	History *string    `arg:"--history,env:REM_HISTORY" help:"Custom history directory location (overrides default ~/.config/rem/history/)"`
 }
 
-// StoreCmd represents the 'rem store' command (pushes to top of stack)
+// StoreCmd represents the 'rem store' command (pushes to top of queue)
 type StoreCmd struct {
 	Files     []string `arg:"positional" help:"Files to read from (optional)"`
 	Clipboard bool     `arg:"-c,--clipboard" help:"Read from clipboard"`
 }
 
-// GetCmd represents the 'rem get' command (accesses stack by index)
+// GetCmd represents the 'rem get' command (accesses queue by index)
 type GetCmd struct {
-	Index     *int    `arg:"positional" help:"Stack index to retrieve (0=top, optional, opens TUI if not provided)"`
+	Index     *int    `arg:"positional" help:"Queue index to retrieve (0=top, optional, opens TUI if not provided)"`
 	File      *string `arg:"positional" help:"Output file (optional)"`
 	Clipboard bool    `arg:"-c,--clipboard" help:"Copy to clipboard"`
 }
@@ -63,7 +63,7 @@ type SearchCmd struct {
 
 // Description returns the program description
 func (Args) Description() string {
-	return "rem - Enhanced clipboard stack manager with persistent LIFO stack"
+	return "rem - Enhanced clipboard queue manager with persistent LIFO queue"
 }
 
 // Version returns the program version

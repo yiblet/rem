@@ -130,7 +130,7 @@ func TestArgsValidation_ValidCases(t *testing.T) {
 			name: "store from file",
 			args: Args{
 				Store: &StoreCmd{
-					File: stringPtr("test.txt"),
+					Files: []string{"test.txt"},
 				},
 			},
 		},
@@ -202,7 +202,7 @@ func TestArgsValidation_InvalidCases(t *testing.T) {
 			name: "store both file and clipboard",
 			args: Args{
 				Store: &StoreCmd{
-					File:      stringPtr("test.txt"),
+					Files:     []string{"test.txt"},
 					Clipboard: true,
 				},
 			},
@@ -467,7 +467,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 	})
 }
 
-func TestConfigIntegrationWithStackManager(t *testing.T) {
+func TestConfigIntegrationWithQueueManager(t *testing.T) {
 	// Create temporary directories for test
 	tempDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
@@ -497,9 +497,9 @@ func TestConfigIntegrationWithStackManager(t *testing.T) {
 		t.Fatalf("Failed to create CLI after config: %v", err)
 	}
 
-	// Verify the stack manager has the correct history limit
+	// Verify the queue manager has the correct history limit
 	if cli2.stackManager.GetHistoryLimit() != 5 {
-		t.Errorf("Expected stack manager history limit 5, got %d", cli2.stackManager.GetHistoryLimit())
+		t.Errorf("Expected queue manager history limit 5, got %d", cli2.stackManager.GetHistoryLimit())
 	}
 }
 

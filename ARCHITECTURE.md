@@ -1,14 +1,14 @@
-# rem - Enhanced Clipboard Stack Manager Architecture
+# rem - Enhanced Clipboard Queue Manager Architecture
 
 ## Overview
 
-`rem` is a powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a persistent LIFO stack and interactive TUI viewer. It provides seamless integration with existing clipboard workflows while adding advanced features like search, position tracking, and multi-format content handling.
+`rem` is a powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a persistent LIFO queue and interactive TUI viewer. It provides seamless integration with existing clipboard workflows while adding advanced features like search, position tracking, and multi-format content handling.
 
 ## Core Concept
 
-Unlike traditional clipboard managers that replace the clipboard, `rem` works as a **stack-based clipboard enhancer**:
+Unlike traditional clipboard managers that replace the clipboard, `rem` works as a **queue-based clipboard enhancer**:
 
-- **Stack Model (LIFO)**: Items are pushed onto the top of the stack, most recent items are accessed first
+- **Queue Model (LIFO)**: Items are pushed onto the top of the queue, most recent items are accessed first
 - **Stream-Based Content**: All content is modeled as `io.ReadSeekCloser` for efficient handling
 - **Position Memory**: Each item remembers scroll position and search state independently
 - **Non-Destructive Operations**: `get` operations are peek operations by default
@@ -24,8 +24,8 @@ Unlike traditional clipboard managers that replace the clipboard, `rem` works as
 └─────────────────────────────────────────────────────────────────┘
                                 │
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Core Stack Manager                        │
-│  - Stack Operations (LIFO)                                     │
+│                      Core Queue Manager                        │
+│  - Queue Operations (LIFO)                                     │
 │  - Persistence Layer                                           │
 │  - Content Type Detection                                      │
 │  - Metadata Management                                         │
@@ -89,9 +89,9 @@ rem                         # Launch TUI (same as rem get)
 - **Positional arguments**: Files for input/output
 - **No arguments**: Default behaviors (stdin for store, TUI for get)
 
-### 2. Core Stack Manager
+### 2. Core Queue Manager
 
-#### Current Stack Implementation
+#### Current Queue Implementation
 ```go
 type StackManager struct {
     fs FileSystem  // fs.FS abstraction rooted at config directory
@@ -114,15 +114,15 @@ type FileSystem interface {
 #### Implementation Details
 - **File-based persistence**: Each item stored as individual file with ISO timestamp name
 - **fs.FS abstraction**: RemFS package provides filesystem rooted at `~/.config/rem/`
-- **Content directory**: All stack items stored in `content/` subdirectory
+- **Content directory**: All queue items stored in `content/` subdirectory
 - **Microsecond precision**: Filenames use RFC3339 with microsecond precision to prevent collisions
 - **Auto-cleanup**: Automatic removal of oldest items when exceeding 20 item limit
 
-#### LIFO Stack Operations
-- **Push**: Add items to top of stack
+#### LIFO Queue Operations
+- **Push**: Add items to top of queue
 - **Peek**: Non-destructive access to any position
-- **Auto-eviction**: Remove oldest items when stack exceeds size limit
-- **Persistence**: Automatic save/restore of stack state
+- **Auto-eviction**: Remove oldest items when queue exceeds size limit
+- **Persistence**: Automatic save/restore of queue state
 
 ### 3. Content Abstraction Layer
 
@@ -196,7 +196,7 @@ type StackItem struct {
 ```
 
 #### Dual-Pane Design
-- **Left Pane (25 chars)**: Stack browser with previews (most recent items at top)
+- **Left Pane (25 chars)**: Queue browser with previews (most recent items at top)
 - **Right Pane (Flexible)**: Full content viewer with pager functionality
 - **Status Line**: Command input, search feedback, help text
 
@@ -211,18 +211,18 @@ type StackItem struct {
 
 ### Store Operation Flow
 ```
-Input Source → Content Detection → Stack Push → Persistence → Preview Generation
+Input Source → Content Detection → Queue Push → Persistence → Preview Generation
      │               │                    │              │              │
-   stdin         ContentType         StackManager    Database      TUI Update
+   stdin         ContentType         QueueManager    Database      TUI Update
    file          Validation          .Push()         .Save()       .Refresh()
    clipboard     Size Limits
 ```
 
 ### Get Operation Flow
 ```
-User Request → Stack Lookup → Content Retrieval → Output Formatting → Destination
+User Request → Queue Lookup → Content Retrieval → Output Formatting → Destination
      │              │              │                    │               │
-   rem get 5    StackManager    ContentReader      Format Selection   stdout
+   rem get 5    QueueManager    ContentReader      Format Selection   stdout
    TUI Nav      .Get(index)     .Seek()/.Read()    Text/Binary       clipboard
                                                                       file
 ```
@@ -250,7 +250,7 @@ TUI Input → Mode Handling → State Update → Content Rendering → Display
 
 ### 3. **Non-Destructive Operations**
 - `get` operations are peeks, not pops
-- Stack persists across sessions
+- Queue persists across sessions
 - Undo-friendly design
 
 ### 4. **Unix Philosophy Compatibility**
@@ -287,16 +287,16 @@ TUI Input → Mode Handling → State Update → Content Rendering → Display
 **Project Metrics**: 10 Go files, ~2,143 lines of code across 4 internal packages
 
 ### Completed Components
-1. **Core Stack Manager**: File-based persistence with auto-cleanup (`internal/queue/`)
-   - LIFO stack with newest items at index 0
+1. **Core Queue Manager**: File-based persistence with auto-cleanup (`internal/queue/`)
+   - LIFO queue with newest items at index 0
    - ISO timestamp-based filenames for ordering
-   - Auto-cleanup when exceeding 255 items (DefaultMaxStackSize)
+   - Auto-cleanup when exceeding 255 items (DefaultMaxQueueSize)
    - Legacy aliases for backward compatibility
 2. **RemFS Abstraction**: fs.FS interface rooted at config directory (`internal/remfs/`)
    - Testable filesystem abstraction
    - Cross-platform config directory support
 3. **Interactive TUI**: Dual-pane viewer with search and navigation (`internal/tui/`)
-   - Left pane: Stack browser with previews
+   - Left pane: Queue browser with previews
    - Right pane: Content viewer with search, highlighting, position memory
    - Keyboard navigation compatible with less/vim
 4. **Complete CLI Interface**: Full store/get command structure (`internal/cli/`)
@@ -324,25 +324,25 @@ TUI Input → Mode Handling → State Update → Content Rendering → Display
 The rem tool is now production-ready with full CLI functionality:
 
 ```bash
-# Store operations (push to stack)
+# Store operations (push to queue)
 echo "content" | rem store          # From stdin
 rem store filename.txt             # From file
 rem store -c                       # From clipboard
 
-# Get operations (access stack)
+# Get operations (access queue)
 rem get                           # Interactive TUI browser
 rem get 0                         # Output top item to stdout
 rem get -c 1                      # Copy second item to clipboard
 rem get 2 output.txt              # Save third item to file
 
-# Stack behavior (LIFO)
-# Index 0 = most recent (top of stack)
+# Queue behavior (LIFO)
+# Index 0 = most recent (top of queue)
 # Index 1 = second most recent
 # Index N = older items
 ```
 
 ### Future Enhancements (Phase 4+)
-1. **Configuration system**: Stack size limits and preferences
+1. **Configuration system**: Queue size limits and preferences
 2. **Advanced content handling**: Binary content, syntax highlighting
 3. **Network integration**: HTTP/HTTPS content sources
 4. **Encryption**: Optional encryption for sensitive content
@@ -358,4 +358,4 @@ type ContentProcessor interface {
 }
 ```
 
-This architecture provides a solid foundation built on fs.FS abstraction for testability. The system is now feature-complete with a production-ready CLI interface, interactive TUI, and robust LIFO stack management. Phase 3 successfully delivers a fully functional clipboard stack manager that can replace basic pbcopy/pbpaste workflows with enhanced history and interactive browsing capabilities.
+This architecture provides a solid foundation built on fs.FS abstraction for testability. The system is now feature-complete with a production-ready CLI interface, interactive TUI, and robust LIFO queue management. Phase 3 successfully delivers a fully functional clipboard queue manager that can replace basic pbcopy/pbpaste workflows with enhanced history and interactive browsing capabilities.

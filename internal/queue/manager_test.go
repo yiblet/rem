@@ -199,8 +199,8 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
-	// Add more than DefaultMaxStackSize items
-	for i := 0; i < DefaultMaxStackSize+5; i++ {
+	// Add more than DefaultMaxQueueSize items
+	for i := 0; i < DefaultMaxQueueSize+5; i++ {
 		content := strings.NewReader(fmt.Sprintf("Content %d", i))
 		_, err := qm.Enqueue(content)
 		if err != nil {
@@ -208,14 +208,14 @@ func TestQueueManager_MaxSize(t *testing.T) {
 		}
 	}
 
-	// Check that size is limited to DefaultMaxStackSize
+	// Check that size is limited to DefaultMaxQueueSize
 	size, err := qm.Size()
 	if err != nil {
 		t.Fatalf("Failed to get size: %v", err)
 	}
 
-	if size != DefaultMaxStackSize {
-		t.Errorf("Expected size %d, got %d", DefaultMaxStackSize, size)
+	if size != DefaultMaxQueueSize {
+		t.Errorf("Expected size %d, got %d", DefaultMaxQueueSize, size)
 	}
 
 	// Check that newest items are kept (should have items 5-259)
@@ -269,14 +269,14 @@ func TestQueueManager_Preview(t *testing.T) {
 	}
 }
 
-func TestStackManager_Clear(t *testing.T) {
+func TestQueueManager_Clear(t *testing.T) {
 	memFS := NewMemoryFileSystem()
 	qm, err := NewStackManager(memFS)
 	if err != nil {
-		t.Fatalf("Failed to create stack manager: %v", err)
+		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
-	// Add some items to the stack
+	// Add some items to the queue
 	for i := 0; i < 5; i++ {
 		content := strings.NewReader(fmt.Sprintf("Item %d", i))
 		_, err := qm.Push(content)
@@ -294,13 +294,13 @@ func TestStackManager_Clear(t *testing.T) {
 		t.Errorf("Expected size 5, got %d", size)
 	}
 
-	// Clear the stack
+	// Clear the queue
 	err = qm.Clear()
 	if err != nil {
-		t.Fatalf("Failed to clear stack: %v", err)
+		t.Fatalf("Failed to clear queue: %v", err)
 	}
 
-	// Verify stack is empty
+	// Verify queue is empty
 	size, err = qm.Size()
 	if err != nil {
 		t.Fatalf("Failed to get size after clear: %v", err)
@@ -309,18 +309,18 @@ func TestStackManager_Clear(t *testing.T) {
 		t.Errorf("Expected size 0 after clear, got %d", size)
 	}
 
-	// Test clearing empty stack (should not error)
+	// Test clearing empty queue (should not error)
 	err = qm.Clear()
 	if err != nil {
-		t.Fatalf("Failed to clear empty stack: %v", err)
+		t.Fatalf("Failed to clear empty queue: %v", err)
 	}
 }
 
-func TestStackManager_Search(t *testing.T) {
+func TestQueueManager_Search(t *testing.T) {
 	memFS := NewMemoryFileSystem()
 	qm, err := NewStackManager(memFS)
 	if err != nil {
-		t.Fatalf("Failed to create stack manager: %v", err)
+		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
 	// Add test items
@@ -400,11 +400,11 @@ func TestStackManager_Search(t *testing.T) {
 	}
 }
 
-func TestStackManager_Search_InvalidRegex(t *testing.T) {
+func TestQueueManager_Search_InvalidRegex(t *testing.T) {
 	memFS := NewMemoryFileSystem()
 	qm, err := NewStackManager(memFS)
 	if err != nil {
-		t.Fatalf("Failed to create stack manager: %v", err)
+		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
 	// Test with invalid regex pattern
@@ -414,21 +414,21 @@ func TestStackManager_Search_InvalidRegex(t *testing.T) {
 	}
 }
 
-func TestStackManager_Search_EmptyStack(t *testing.T) {
+func TestQueueManager_Search_EmptyQueue(t *testing.T) {
 	memFS := NewMemoryFileSystem()
 	qm, err := NewStackManager(memFS)
 	if err != nil {
-		t.Fatalf("Failed to create stack manager: %v", err)
+		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
-	// Search in empty stack
+	// Search in empty queue
 	results, err := qm.Search("test")
 	if err != nil {
-		t.Fatalf("Search in empty stack should not error: %v", err)
+		t.Fatalf("Search in empty queue should not error: %v", err)
 	}
 
 	if len(results) != 0 {
-		t.Errorf("Expected 0 results in empty stack, got %d", len(results))
+		t.Errorf("Expected 0 results in empty queue, got %d", len(results))
 	}
 }
 
@@ -495,11 +495,11 @@ func TestIsBinary(t *testing.T) {
 	}
 }
 
-func TestStackManager_BinaryDetection(t *testing.T) {
+func TestQueueManager_BinaryDetection(t *testing.T) {
 	memFS := NewMemoryFileSystem()
 	qm, err := NewStackManager(memFS)
 	if err != nil {
-		t.Fatalf("Failed to create stack manager: %v", err)
+		t.Fatalf("Failed to create queue manager: %v", err)
 	}
 
 	// Test with binary content
