@@ -86,33 +86,48 @@ func (c *CLI) Execute(args *Args) error {
 
 // executeStore handles the 'rem store' command
 func (c *CLI) executeStore(cmd *StoreCmd) error {
-	var content io.ReadSeeker
-	var err error
-
 	switch {
 	case cmd.Clipboard:
 		// Read from clipboard
-		content, err = c.readFromClipboard()
-	case cmd.File != nil:
-		// Read from file
-		content, err = c.readFromFile(*cmd.File)
+		content, err := c.readFromClipboard()
+		if err != nil {
+			return fmt.Errorf("failed to read content: %w", err)
+		}
+		item, err := c.stackManager.Push(content)
+		if err != nil {
+			return fmt.Errorf("failed to store content: %w", err)
+		}
+		fmt.Printf("Stored: %s\n", item.Preview)
+		return nil
+
+	case len(cmd.Files) > 0:
+		// Read from files
+		for _, filename := range cmd.Files {
+			content, err := c.readFromFile(filename)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", filename, err)
+			}
+			item, err := c.stackManager.Push(content)
+			if err != nil {
+				return fmt.Errorf("failed to store content from %s: %w", filename, err)
+			}
+			fmt.Printf("Stored from %s: %s\n", filename, item.Preview)
+		}
+		return nil
+
 	default:
 		// Read from stdin
-		content, err = c.readFromStdin()
+		content, err := c.readFromStdin()
+		if err != nil {
+			return fmt.Errorf("failed to read content: %w", err)
+		}
+		item, err := c.stackManager.Push(content)
+		if err != nil {
+			return fmt.Errorf("failed to store content: %w", err)
+		}
+		fmt.Printf("Stored: %s\n", item.Preview)
+		return nil
 	}
-
-	if err != nil {
-		return fmt.Errorf("failed to read content: %w", err)
-	}
-
-	// Store content in stack
-	item, err := c.stackManager.Push(content)
-	if err != nil {
-		return fmt.Errorf("failed to store content: %w", err)
-	}
-
-	fmt.Printf("Stored: %s\n", item.Preview)
-	return nil
 }
 
 // executeGet handles the 'rem get' command

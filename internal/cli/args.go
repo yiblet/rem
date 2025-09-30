@@ -16,8 +16,8 @@ type Args struct {
 
 // StoreCmd represents the 'rem store' command (pushes to top of stack)
 type StoreCmd struct {
-	File      *string `arg:"positional" help:"File to read from (optional)"`
-	Clipboard bool    `arg:"-c,--clipboard" help:"Read from clipboard"`
+	Files     []string `arg:"positional" help:"Files to read from (optional)"`
+	Clipboard bool     `arg:"-c,--clipboard" help:"Read from clipboard"`
 }
 
 // GetCmd represents the 'rem get' command (accesses stack by index)
@@ -77,6 +77,7 @@ func (Args) Epilogue() string {
   # Store operations
   echo "hello" | rem store          # Store from stdin
   rem store file.txt               # Store from file
+  rem store file1.txt file2.txt    # Store multiple files
   rem store -c                     # Store from clipboard
 
   # Get operations
@@ -122,7 +123,7 @@ func (args *Args) Validate() error {
 
 // Validate validates store command arguments
 func (s *StoreCmd) Validate() error {
-	if s.File != nil && s.Clipboard {
+	if len(s.Files) > 0 && s.Clipboard {
 		return fmt.Errorf("cannot specify both file and clipboard input")
 	}
 	return nil
