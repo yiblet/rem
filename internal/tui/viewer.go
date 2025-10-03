@@ -61,16 +61,21 @@ type StackItem struct {
 	ID            string // Unique identifier for this item
 	Content       io.ReadSeekCloser
 	Preview       string
-	Lines         []string     // cached wrapped lines
+	Lines         []string     // cached wrapped lines (viewport window)
+	LinesStart    int          // first source line number in cache
+	LinesEnd      int          // last source line number in cache
 	CachedWidth   int          // width used for cached lines (0 = not cached)
 	ViewPos       int          // current view position (line number)
 	SearchPattern string       // current search pattern
 	SearchMatches []int        // line numbers with matches
 	SearchIndex   int          // current match index (-1 if no search active)
+	SearchLimitHit bool        // true if search stopped at 99 matches
 	IsBinary      bool         // true if content is binary
 	Size          int64        // size in bytes (useful for binary files)
 	SHA256        string       // SHA256 hash (for binary files)
 	DeleteFunc    func() error // function to delete this item from persistent storage
+
+	pager *Pager // NEW: Streaming pager for content access
 }
 
 // GetFullContent reads the entire content from the ReadSeekCloser
@@ -99,13 +104,18 @@ func (q *StackItem) GetFullContent() (string, error) {
 	return string(content), nil
 }
 
-// UpdateWrappedLines recalculates wrapped lines based on width
-// Note: We don't limit by height here because users need to scroll through all content
-// This function is smart - it only recalculates if the width has changed
+// UpdateWrappedLines recalculates wrapped lines based on width using streaming pager
+// Loads only viewport window + buffer for memory efficiency
 func (q *StackItem) UpdateWrappedLines(width, height int) error {
-	// Check if we need to recalculate (width changed or no cache)
-	if q.CachedWidth == width && len(q.Lines) > 0 {
-		// Lines are already wrapped for this width, no need to recalculate
+	// Check if we need to recalculate
+	// Note: When height > LinesEnd, the viewport is larger than the content,
+	// so we shouldn't trigger recalc based on the bottom edge check
+	needsRecalc := q.CachedWidth != width ||
+		q.ViewPos < q.LinesStart ||
+		(q.LinesEnd > height && q.ViewPos >= q.LinesEnd-height)
+
+	if !needsRecalc && len(q.Lines) > 0 {
+		// Cache is valid
 		return nil
 	}
 
@@ -124,17 +134,63 @@ func (q *StackItem) UpdateWrappedLines(width, height int) error {
 		return nil
 	}
 
-	content, err := q.GetFullContent()
-	if err != nil {
+	// Initialize pager if not already done
+	if q.pager == nil {
+		q.pager = NewPager(q.Content)
+	}
+
+	// Calculate viewport window: ViewPos ± buffer
+	const bufferLines = 50
+	windowStart := max(0, q.ViewPos-bufferLines)
+	windowEnd := q.ViewPos + height + bufferLines
+
+	// Seek to start of window
+	if _, err := q.pager.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 
-	// Use WrapText to wrap lines to fit within width
-	// Height is ignored here - scrolling handles vertical overflow
-	q.Lines = WrapText(content, width)
-	q.CachedWidth = width // Remember the width we wrapped for
+	// Skip to windowStart line
+	for i := 0; i < windowStart; i++ {
+		_, err := q.pager.ReadLine()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
 
-	// Re-run search if we have an active pattern
+	// Read and wrap lines in window
+	q.Lines = nil
+	lineNum := windowStart
+	for lineNum < windowEnd {
+		sourceLine, err := q.pager.ReadLine()
+		if err != nil && err != io.EOF {
+			return err
+		}
+
+		// Remove trailing newline for wrapping
+		sourceLine = strings.TrimSuffix(sourceLine, "\n")
+
+		// Process line if not empty
+		if sourceLine != "" {
+			// Wrap this source line
+			wrappedLines := WrapText(sourceLine, width)
+			q.Lines = append(q.Lines, wrappedLines...)
+			lineNum++
+		}
+
+		// Break after processing if we hit EOF
+		if err == io.EOF {
+			break
+		}
+	}
+
+	q.LinesStart = windowStart
+	q.LinesEnd = lineNum
+	q.CachedWidth = width
+
+	// Re-run search if active
 	if q.SearchPattern != "" {
 		q.performSearch(q.SearchPattern)
 	}
@@ -214,12 +270,13 @@ func (q *StackItem) calculateSHA256() error {
 	return nil
 }
 
-// performSearch searches for a regex pattern and populates SearchMatches
+// performSearch searches for a regex pattern using streaming, limiting to 99 matches
 func (q *StackItem) performSearch(pattern string) error {
 	if pattern == "" {
 		q.SearchPattern = ""
 		q.SearchMatches = nil
 		q.SearchIndex = -1
+		q.SearchLimitHit = false
 		return nil
 	}
 
@@ -231,15 +288,67 @@ func (q *StackItem) performSearch(pattern string) error {
 	q.SearchPattern = pattern
 	q.SearchMatches = nil
 	q.SearchIndex = -1
+	q.SearchLimitHit = false
 
-	// Search through all lines
-	for lineNum, line := range q.Lines {
-		if regex.MatchString(line) {
-			q.SearchMatches = append(q.SearchMatches, lineNum)
+	// Use default width if CachedWidth not set
+	wrapWidth := q.CachedWidth
+	if wrapWidth == 0 {
+		wrapWidth = 80 // Default width for search without wrapping calculation
+	}
+
+	// Initialize pager for searching
+	if q.pager == nil {
+		q.pager = NewPager(q.Content)
+	}
+
+	// Seek to beginning
+	if _, err := q.pager.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	// Stream through file, matching lines (limit to 99 matches)
+	const maxMatches = 99
+	wrappedLineNum := 0
+
+	for {
+		sourceLine, err := q.pager.ReadLine()
+		if err != nil && err != io.EOF {
+			return err
+		}
+
+		// Remove trailing newline for matching
+		sourceLine = strings.TrimSuffix(sourceLine, "\n")
+
+		// Process line if not empty
+		if sourceLine != "" {
+			// Check if this source line matches
+			if regex.MatchString(sourceLine) {
+				// Add all wrapped line numbers for this source line
+				wrappedLines := WrapText(sourceLine, wrapWidth)
+				for i := range wrappedLines {
+					q.SearchMatches = append(q.SearchMatches, wrappedLineNum+i)
+
+					// Check if we hit the limit
+					if len(q.SearchMatches) >= maxMatches {
+						q.SearchLimitHit = true
+						goto done
+					}
+				}
+			}
+
+			// Count wrapped lines
+			wrappedLines := WrapText(sourceLine, wrapWidth)
+			wrappedLineNum += len(wrappedLines)
+		}
+
+		// Break after processing if we hit EOF
+		if err == io.EOF {
+			break
 		}
 	}
 
-	// If we found matches, set to first match
+done:
+	// Set to first match if any found
 	if len(q.SearchMatches) > 0 {
 		q.SearchIndex = 0
 	}

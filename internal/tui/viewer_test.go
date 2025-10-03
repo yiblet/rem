@@ -146,3 +146,65 @@ func TestModelViewPanesAlignment(t *testing.T) {
 		t.Logf("Both borders found: left at %d, right at %d", firstBorder, lastBorder)
 	}
 }
+
+func TestStackItem_PerformSearch(t *testing.T) {
+	content := "Line 1 test\nLine 2\nLine 3 test"
+	item := &StackItem{
+		Content: NewStringReadSeekCloser(content),
+		Preview: "Test content",
+	}
+
+	// Perform search
+	err := item.performSearch("test")
+	if err != nil {
+		t.Fatalf("performSearch failed: %v", err)
+	}
+
+	// Check matches
+	t.Logf("SearchMatches: %v", item.SearchMatches)
+	t.Logf("Number of matches: %d", len(item.SearchMatches))
+
+	if len(item.SearchMatches) != 2 {
+		t.Errorf("Expected 2 matches, got %d", len(item.SearchMatches))
+	}
+
+	if item.SearchIndex != 0 {
+		t.Errorf("Expected SearchIndex to be 0, got %d", item.SearchIndex)
+	}
+
+	// Verify match line numbers
+	expectedMatches := []int{0, 2}
+	for i, expected := range expectedMatches {
+		if i < len(item.SearchMatches) && item.SearchMatches[i] != expected {
+			t.Errorf("Expected match %d at line %d, got %d", i, expected, item.SearchMatches[i])
+		}
+	}
+}
+
+func TestStackItem_PerformSearchAfterUpdateWrappedLines(t *testing.T) {
+	content := "Line 1 test\nLine 2\nLine 3 test"
+	item := &StackItem{
+		Content: NewStringReadSeekCloser(content),
+		Preview: "Test content",
+	}
+
+	// First call UpdateWrappedLines (which creates and uses the pager)
+	err := item.UpdateWrappedLines(80, 10)
+	if err != nil {
+		t.Fatalf("UpdateWrappedLines failed: %v", err)
+	}
+
+	// Now perform search (should reuse the pager)
+	err = item.performSearch("test")
+	if err != nil {
+		t.Fatalf("performSearch failed: %v", err)
+	}
+
+	// Check matches
+	t.Logf("SearchMatches: %v", item.SearchMatches)
+	t.Logf("Number of matches: %d", len(item.SearchMatches))
+
+	if len(item.SearchMatches) != 2 {
+		t.Errorf("Expected 2 matches after UpdateWrappedLines, got %d", len(item.SearchMatches))
+	}
+}

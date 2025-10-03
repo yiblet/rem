@@ -41,6 +41,37 @@ func (mfs *MemoryFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	return nil
 }
 
+// memoryFileWriter implements io.WriteCloser for MemoryFileSystem
+type memoryFileWriter struct {
+	fs   *MemoryFileSystem
+	name string
+	perm os.FileMode
+	buf  []byte
+}
+
+func (w *memoryFileWriter) Write(p []byte) (n int, err error) {
+	w.buf = append(w.buf, p...)
+	return len(p), nil
+}
+
+func (w *memoryFileWriter) Close() error {
+	// Write buffer to filesystem when closed
+	w.fs.MapFS[w.name] = &fstest.MapFile{
+		Data: w.buf,
+		Mode: w.perm,
+	}
+	return nil
+}
+
+func (mfs *MemoryFileSystem) OpenForWrite(name string, perm os.FileMode) (io.WriteCloser, error) {
+	return &memoryFileWriter{
+		fs:   mfs,
+		name: name,
+		perm: perm,
+		buf:  nil,
+	}, nil
+}
+
 func (mfs *MemoryFileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
 	var entries []fs.DirEntry
 

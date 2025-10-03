@@ -26,6 +26,7 @@ type FileSystem interface {
 	fs.FS
 	fs.ReadDirFS
 	WriteFile(name string, data []byte, perm fs.FileMode) error
+	OpenForWrite(name string, perm fs.FileMode) (io.WriteCloser, error)
 	Remove(name string) error
 	MkdirAll(name string, perm fs.FileMode) error
 }
@@ -79,31 +80,51 @@ func (qm *QueueManager) Enqueue(content io.Reader) (*QueueItem, error) {
 	filename := now.Format("2006-01-02T15-04-05.000000Z07-00") + FileExtension
 	filePath := filename
 
-	// Read all content into memory first
-	data, err := io.ReadAll(content)
+	// Open file for streaming write
+	file, err := qm.fs.OpenForWrite(filePath, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read content: %w", err)
+		return nil, fmt.Errorf("failed to create content file: %w", err)
+	}
+	defer file.Close()
+
+	// Setup multi-writer: file + SHA256 hasher
+	hasher := sha256.New()
+	writer := io.MultiWriter(file, hasher)
+
+	// Stream content to both file and hasher
+	written, err := io.Copy(writer, content)
+	if err != nil {
+		qm.fs.Remove(filePath) // Clean up partial file
+		return nil, fmt.Errorf("failed to write content: %w", err)
 	}
 
-	if len(data) == 0 {
+	if written == 0 {
+		qm.fs.Remove(filePath) // Clean up empty file
 		return nil, fmt.Errorf("no content to store")
 	}
 
-	// Write content to file
-	if err := qm.fs.WriteFile(filePath, data, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write content file: %w", err)
+	// Close file before reopening for reading
+	file.Close()
+
+	// Read first 4KB from file for preview/binary detection
+	fileReader, err := qm.fs.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reopen file for metadata: %w", err)
 	}
+	defer fileReader.Close()
 
-	// Generate preview
-	preview := qm.generatePreview(data)
+	previewBuf := make([]byte, 4096)
+	n, _ := fileReader.Read(previewBuf)
+	previewBuf = previewBuf[:n]
 
-	// Check if binary and calculate metadata
-	binary := isBinary(data)
+	// Generate metadata from sample
+	preview := qm.generatePreview(previewBuf)
+	binary := isBinary(previewBuf)
+
+	// Calculate SHA256 from hasher (for binary files)
 	var sha256Hash string
 	if binary {
-		// Calculate SHA256 for binary files
-		hash := sha256.Sum256(data)
-		sha256Hash = hex.EncodeToString(hash[:])
+		sha256Hash = hex.EncodeToString(hasher.Sum(nil))
 	}
 
 	item := &QueueItem{
@@ -112,7 +133,7 @@ func (qm *QueueManager) Enqueue(content io.Reader) (*QueueItem, error) {
 		FilePath:  filePath,
 		Preview:   preview,
 		IsBinary:  binary,
-		Size:      int64(len(data)),
+		Size:      written,
 		SHA256:    sha256Hash,
 	}
 

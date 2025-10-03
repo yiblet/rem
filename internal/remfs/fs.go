@@ -2,6 +2,7 @@ package remfs
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -107,6 +108,23 @@ func (rfs *RemFS) WriteFile(name string, data []byte, perm os.FileMode) error {
 	}
 
 	return os.WriteFile(fullPath, data, perm)
+}
+
+// OpenForWrite opens a file for writing (streaming support)
+func (rfs *RemFS) OpenForWrite(name string, perm os.FileMode) (io.WriteCloser, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "openforwrite", Path: name, Err: fs.ErrInvalid}
+	}
+
+	fullPath := filepath.Join(rfs.root, name)
+	dir := filepath.Dir(fullPath)
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+
+	return os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 }
 
 // Remove removes a file relative to the rem config directory

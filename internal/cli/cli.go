@@ -108,6 +108,7 @@ func (c *CLI) executeStore(cmd *StoreCmd) error {
 				return fmt.Errorf("failed to read file %s: %w", filename, err)
 			}
 			item, err := c.stackManager.Push(content)
+			content.Close() // Close file handle after enqueue
 			if err != nil {
 				return fmt.Errorf("failed to store content from %s: %w", filename, err)
 			}
@@ -152,22 +153,34 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 	}
 	defer reader.Close()
 
-	// Read all content
-	content, err := io.ReadAll(reader)
-	if err != nil {
-		return fmt.Errorf("failed to read content: %w", err)
-	}
-
 	switch {
 	case cmd.Clipboard:
-		// Copy to clipboard
+		// Copy to clipboard - requires full content in memory
+		content, err := io.ReadAll(reader)
+		if err != nil {
+			return fmt.Errorf("failed to read content: %w", err)
+		}
 		return c.writeToClipboard(content)
 	case cmd.File != nil:
-		// Write to file
-		return c.writeToFile(*cmd.File, content)
+		// Stream to file
+		outFile, err := os.Create(*cmd.File)
+		if err != nil {
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+		defer outFile.Close()
+
+		_, err = io.Copy(outFile, reader)
+		if err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+
+		// Read a preview for display
+		preview := item.Preview
+		fmt.Printf("Written to %s: %s\n", *cmd.File, preview)
+		return nil
 	default:
-		// Write to stdout
-		_, err = os.Stdout.Write(content)
+		// Stream to stdout
+		_, err = io.Copy(os.Stdout, reader)
 		return err
 	}
 }
@@ -295,19 +308,14 @@ func (c *CLI) readFromClipboard() (io.ReadSeeker, error) {
 }
 
 // readFromFile reads content from a file
-func (c *CLI) readFromFile(filename string) (io.ReadSeeker, error) {
+// Returns the file handle directly for streaming - caller must close it
+func (c *CLI) readFromFile(filename string) (*os.File, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-
-	return strings.NewReader(string(data)), nil
+	// Caller is responsible for closing the file
+	return file, nil
 }
 
 // readFromStdin reads content from stdin

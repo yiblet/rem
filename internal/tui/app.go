@@ -637,7 +637,16 @@ func renderStatusLine(model AppModel) string {
 	} else if model.Search.HasMatches() {
 		// Show search results
 		currentMatch, totalMatches := model.Search.GetCurrentMatch()
-		statusLine = fmt.Sprintf("Pattern: %s - Match %d of %d", model.Search.GetPattern(), currentMatch+1, totalMatches)
+
+		// Check if search limit was hit (show "99+" instead of exact count)
+		matchCountDisplay := fmt.Sprintf("%d", totalMatches)
+		if model.LeftPane.Selected < len(model.Items) && model.Items[model.LeftPane.Selected] != nil {
+			if model.Items[model.LeftPane.Selected].SearchLimitHit {
+				matchCountDisplay = "99+"
+			}
+		}
+
+		statusLine = fmt.Sprintf("Pattern: %s - Match %d of %s", model.Search.GetPattern(), currentMatch+1, matchCountDisplay)
 	} else {
 		// Show mode-specific status text
 		switch model.CurrentMode {
