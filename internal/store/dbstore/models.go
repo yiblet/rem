@@ -27,7 +27,7 @@ type HistoryItemModel struct {
 
 // TableName returns the table name for HistoryItemModel
 func (HistoryItemModel) TableName() string {
-	return "history"
+	return "history_items"
 }
 
 // ToHistoryItem converts the GORM model to a store.HistoryItem
