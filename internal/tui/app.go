@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -86,10 +87,13 @@ type AppModel struct {
 	// Flash message for temporary notifications
 	FlashMessage string    // The message to display
 	FlashExpiry  time.Time // When the message should disappear
+
+	// Dependencies
+	clipboard clipboard.Clipboard // Clipboard for copy operations
 }
 
 // NewAppModel creates a new app model with all sub-models
-func NewAppModel(items []*StackItem) AppModel {
+func NewAppModel(items []*StackItem, clip clipboard.Clipboard) AppModel {
 	// Default dimensions that will be properly set on first resize
 	defaultWidth := 120
 	defaultHeight := 20
@@ -108,6 +112,7 @@ func NewAppModel(items []*StackItem) AppModel {
 		Search:      NewSearchModel(),
 		Modal:       NewModalModel(),
 		Items:       items,
+		clipboard:   clip,
 	}
 }
 
@@ -825,20 +830,31 @@ func (a *AppModel) copyToClipboard() tea.Cmd {
 		return a.setFlashMessage("No item selected", 2*time.Second)
 	}
 
-	// Get the full content
-	content, err := selectedItem.GetFullContent()
+	// Save current position
+	currentPos, err := selectedItem.Content.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return a.setFlashMessage(fmt.Sprintf("Error reading content: %v", err), 2*time.Second)
+		return a.setFlashMessage(fmt.Sprintf("Error saving position: %v", err), 2*time.Second)
 	}
 
-	// Write to clipboard
-	if err := clipboard.Write([]byte(content)); err != nil {
+	// Seek to start
+	if _, err := selectedItem.Content.Seek(0, io.SeekStart); err != nil {
+		return a.setFlashMessage(fmt.Sprintf("Error seeking to start: %v", err), 2*time.Second)
+	}
+
+	// Write to clipboard - stream directly without reading into memory
+	if err := a.clipboard.Write(selectedItem.Content); err != nil {
+		// Try to restore position even if write failed
+		selectedItem.Content.Seek(currentPos, io.SeekStart)
 		return a.setFlashMessage(fmt.Sprintf("Error writing to clipboard: %v", err), 2*time.Second)
 	}
 
-	// Show success message with byte count
-	byteCount := len(content)
-	return a.setFlashMessage(fmt.Sprintf("Copied %d bytes to clipboard", byteCount), 2*time.Second)
+	// Restore position
+	if _, err := selectedItem.Content.Seek(currentPos, io.SeekStart); err != nil {
+		return a.setFlashMessage(fmt.Sprintf("Error restoring position: %v", err), 2*time.Second)
+	}
+
+	// Show success message with size
+	return a.setFlashMessage(fmt.Sprintf("Copied %d bytes to clipboard", selectedItem.Size), 2*time.Second)
 }
 
 // SetItems updates the items list in the app model

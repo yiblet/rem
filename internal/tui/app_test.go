@@ -7,11 +7,17 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yiblet/rem/internal/clipboard/mockboard"
 )
+
+// newTestClipboard creates a mock clipboard for testing
+func newTestClipboard() *mockboard.MockClipboard {
+	return mockboard.New()
+}
 
 func TestNewAppModel(t *testing.T) {
 	items := []*StackItem{}
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 
 	if model.Width != 120 {
 		t.Errorf("Expected width to be 120, got %d", model.Width)
@@ -33,7 +39,7 @@ func TestNewAppModel_WithItems(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 2 content"), Preview: "Item 2"},
 	}
 
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	if app.ActivePane != LeftPane {
 		t.Errorf("Expected active pane to be LeftPane, got %v", app.ActivePane)
@@ -48,7 +54,7 @@ func TestAppModel_WindowResize(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test item content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Test window resize
 	newModel, _ := app.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
@@ -72,7 +78,7 @@ func TestAppModel_TabSwitching(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test item content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Should start with left pane active
 	if app.ActivePane != LeftPane {
@@ -101,7 +107,7 @@ func TestAppModel_QuitKeys(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test item content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	quitKeys := []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune("q")},
@@ -127,7 +133,7 @@ func TestAppModel_LeftPaneNavigation(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 2 content"), Preview: "Item 2"},
 		{Content: NewStringReadSeekCloser("Item 3 content"), Preview: "Item 3"},
 	}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Should start at position 0
 	if app.LeftPane.Cursor != 0 {
@@ -157,7 +163,7 @@ func TestAppModel_RightPaneScrolling(t *testing.T) {
 		Preview: "Long content",
 	}
 	items := []*StackItem{content}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Switch to right pane
 	app.ActivePane = RightPane
@@ -193,7 +199,7 @@ func TestAppModel_SearchMode(t *testing.T) {
 		Preview: "Test content",
 	}
 	items := []*StackItem{content}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Switch to right pane and initialize
 	app.ActivePane = RightPane
@@ -250,7 +256,7 @@ func TestAppModel_SearchNavigation(t *testing.T) {
 		Preview: "Test content",
 	}
 	items := []*StackItem{content}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Set up search results manually
 	app.ActivePane = RightPane
@@ -288,7 +294,7 @@ func TestAppModel_SearchCancel(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test item content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.ActivePane = RightPane
 
 	// Enter search mode properly
@@ -330,7 +336,7 @@ func TestAppModel_View(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Test item 1 content"), Preview: "Test item 1"},
 		{Content: NewStringReadSeekCloser("Test item 2 content"), Preview: "Test item 2"},
 	}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Test initial view (width 0) - force width to 0 to test this condition
 	app.Width = 0
@@ -371,7 +377,7 @@ func TestAppModel_StatusLineStates(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test item content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.Width = 120
 
 	// Test normal status line
@@ -409,7 +415,7 @@ func TestAppModel_SetItems(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 1 content"), Preview: "Item 1"},
 		{Content: NewStringReadSeekCloser("Item 2 content"), Preview: "Item 2"},
 	}
-	app := NewAppModel(originalItems)
+	app := NewAppModel(originalItems, newTestClipboard())
 	app.Init()
 
 	// Set new items
@@ -436,7 +442,7 @@ func TestAppModel_JumpCommands(t *testing.T) {
 		Preview: "Long content",
 	}
 	items := []*StackItem{content}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Switch to right pane and initialize
 	app.ActivePane = RightPane
@@ -524,7 +530,7 @@ func TestAppModel_PaneBorderAlignment(t *testing.T) {
 				Preview: "Test content for border alignment",
 			}
 			items := []*StackItem{content}
-			app := NewAppModel(items)
+			app := NewAppModel(items, newTestClipboard())
 
 			// Set specific dimensions
 			app.Width = 120
@@ -618,7 +624,7 @@ func TestAppModel_HelpMode(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.Width = 120
 	app.Height = 20
 
@@ -649,7 +655,7 @@ func TestAppModel_HelpModeView(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.Width = 120
 	app.Height = 20
 	app.CurrentMode = HelpMode
@@ -686,7 +692,7 @@ func TestAppModel_HelpModeView(t *testing.T) {
 }
 
 func TestAppModel_HelpModeStatusLine(t *testing.T) {
-	app := NewAppModel([]*StackItem{})
+	app := NewAppModel([]*StackItem{}, newTestClipboard())
 	app.Width = 120
 
 	// Test normal mode status line
@@ -708,7 +714,7 @@ func TestAppModel_PaneSwitchingWithH(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.ActivePane = RightPane
 
 	// Press 'h' to switch to left pane
@@ -733,7 +739,7 @@ func TestAppModel_ModalStateTransitions(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Initially in normal mode
 	if app.CurrentMode != NormalMode {
@@ -803,7 +809,7 @@ func TestAppModel_SearchModeBlocksPaneNavigation(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.ActivePane = RightPane
 
 	// Enter search mode
@@ -864,7 +870,7 @@ func TestAppModel_HelpModeBlocksAllNavigation(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 	app.ActivePane = RightPane
 
 	// Enter help mode
@@ -920,7 +926,7 @@ func TestAppModel_NumberInputModeHandling(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	app := NewAppModel(items)
+	app := NewAppModel(items, newTestClipboard())
 
 	// Enter number input mode with '1'
 	newModel, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
@@ -995,7 +1001,7 @@ func TestAppModel_DeleteMode(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 2"), Preview: "Item 2"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = LeftPane
 
 	// Press 'd' to enter delete mode
@@ -1025,7 +1031,7 @@ func TestAppModel_DeleteConfirm(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 2"), Preview: "Item 2"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = LeftPane
 	model.LeftPane.Selected = 1 // Select middle item
 
@@ -1060,7 +1066,7 @@ func TestAppModel_DeleteLastItem(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 2"), Preview: "Item 2"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = LeftPane
 	model.LeftPane.Cursor = 2
 	model.LeftPane.Selected = 2 // Select last item
@@ -1089,7 +1095,7 @@ func TestAppModel_DeleteAllItems(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Only item"), Preview: "Only item"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = LeftPane
 
 	// Delete the only item
@@ -1114,7 +1120,7 @@ func TestAppModel_DeleteModeOnlyInLeftPane(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = RightPane // Focus on right pane
 
 	// Press 'd' - should NOT enter delete mode since we're in right pane
@@ -1132,7 +1138,7 @@ func TestAppModel_DeleteModeCancelWithEscape(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = LeftPane
 
 	// Enter delete mode
@@ -1154,10 +1160,10 @@ func TestAppModel_DeleteModeCancelWithEscape(t *testing.T) {
 func TestAppModel_CopyToClipboard(t *testing.T) {
 	testContent := "Test clipboard content"
 	items := []*StackItem{
-		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item"},
+		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item", Size: int64(len(testContent))},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = LeftPane
 
 	// Press 'c' to copy to clipboard
@@ -1190,10 +1196,10 @@ func TestAppModel_CopyToClipboard(t *testing.T) {
 func TestAppModel_CopyFromRightPane(t *testing.T) {
 	testContent := "Right pane test content"
 	items := []*StackItem{
-		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item"},
+		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item", Size: int64(len(testContent))},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.ActivePane = RightPane // Focus on right pane
 
 	// Press 'c' to copy to clipboard
@@ -1218,7 +1224,7 @@ func TestAppModel_CopyFromRightPane(t *testing.T) {
 
 func TestAppModel_CopyWithNoItems(t *testing.T) {
 	// Empty items list
-	model := NewAppModel([]*StackItem{})
+	model := NewAppModel([]*StackItem{}, newTestClipboard())
 
 	// Press 'c' to copy
 	newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
@@ -1244,7 +1250,7 @@ func TestAppModel_FlashMessageExpires(t *testing.T) {
 		{Content: NewStringReadSeekCloser(testContent), Preview: "Test item"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 
 	// Copy to clipboard to set flash message
 	newModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
@@ -1271,7 +1277,7 @@ func TestAppModel_FlashMessageExpires(t *testing.T) {
 }
 
 func TestAppModel_FlashMessageInStatusLine(t *testing.T) {
-	model := NewAppModel([]*StackItem{})
+	model := NewAppModel([]*StackItem{}, newTestClipboard())
 	model.Width = 120
 
 	// Set a flash message manually
@@ -1295,7 +1301,7 @@ func TestAppModel_FlashMessagePriority(t *testing.T) {
 		Content: NewStringReadSeekCloser("Test content"),
 		Preview: "Test item",
 	}}
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.Width = 120
 
 	// Set up search to have a pattern
@@ -1325,7 +1331,7 @@ func TestAppModel_DeleteModalRendering(t *testing.T) {
 		{Content: NewStringReadSeekCloser("Item 1"), Preview: "Item 1"},
 	}
 
-	model := NewAppModel(items)
+	model := NewAppModel(items, newTestClipboard())
 	model.Width = 120
 	model.Height = 20
 	model.ActivePane = LeftPane

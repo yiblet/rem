@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yiblet/rem/internal/clipboard"
 )
 
 // StringReadSeekCloser wraps a string to implement io.ReadSeekCloser
@@ -409,8 +410,8 @@ type Model struct {
 	app *AppModel
 }
 
-func NewModel(items []*StackItem) Model {
-	app := NewAppModel(items)
+func NewModel(items []*StackItem, clip clipboard.Clipboard) Model {
+	app := NewAppModel(items, clip)
 
 	return Model{
 		cursor:      0,

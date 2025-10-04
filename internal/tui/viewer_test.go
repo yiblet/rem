@@ -19,7 +19,7 @@ func TestLeftPaneRightBorderRendering(t *testing.T) {
 	}
 
 	// Create model with specific dimensions
-	model := NewModel(items)
+	model := NewModel(items, newTestClipboard())
 	model.width = 120
 	model.height = 20
 	model.leftWidth = 25
@@ -91,7 +91,7 @@ func TestModelViewPanesAlignment(t *testing.T) {
 		},
 	}
 
-	model := NewModel(items)
+	model := NewModel(items, newTestClipboard())
 	model.UpdateMockSize(120, 15) // Use more realistic dimensions
 
 	view := model.View()

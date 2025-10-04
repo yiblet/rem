@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yiblet/rem/internal/clipboard"
+	"github.com/yiblet/rem/internal/clipboard/sysboard"
 	"github.com/yiblet/rem/internal/queue"
 	"github.com/yiblet/rem/internal/store"
 	"github.com/yiblet/rem/internal/store/dbstore"
@@ -20,6 +21,7 @@ import (
 type CLI struct {
 	queueManager *queue.QueueManager
 	store        store.Store
+	clipboard    clipboard.Clipboard
 }
 
 // New creates a new CLI instance
@@ -69,9 +71,13 @@ func NewWithArgs(args *Args) (*CLI, error) {
 		return nil, fmt.Errorf("failed to create queue manager: %w", err)
 	}
 
+	// Create system clipboard
+	clip := sysboard.New()
+
 	return &CLI{
 		queueManager: qm,
 		store:        sqliteStore,
+		clipboard:    clip,
 	}, nil
 }
 
@@ -175,12 +181,8 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 
 	switch {
 	case cmd.Clipboard:
-		// Copy to clipboard - requires full content in memory
-		content, err := io.ReadAll(reader)
-		if err != nil {
-			return fmt.Errorf("failed to read content: %w", err)
-		}
-		return c.writeToClipboard(content)
+		// Copy to clipboard - stream directly without reading into memory
+		return c.writeToClipboard(reader, item.Title)
 	case cmd.File != nil:
 		// Stream to file
 		outFile, err := os.Create(*cmd.File)
@@ -324,7 +326,7 @@ func (c *CLI) launchTUI() error {
 		return nil
 	}
 
-	model := tui.NewModel(tuiItems)
+	model := tui.NewModel(tuiItems, c.clipboard)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
@@ -332,9 +334,17 @@ func (c *CLI) launchTUI() error {
 
 // readFromClipboard reads content from system clipboard
 func (c *CLI) readFromClipboard() (io.ReadSeeker, error) {
-	data, err := clipboard.Read()
+	reader, err := c.clipboard.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read clipboard: %w", err)
+	}
+	defer reader.Close()
+
+	// Read all content into memory to create a ReadSeeker
+	// This is necessary because we need Seek capability for the queue manager
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read clipboard content: %w", err)
 	}
 
 	if len(data) == 0 {
@@ -369,13 +379,13 @@ func (c *CLI) readFromStdin() (io.ReadSeeker, error) {
 	return strings.NewReader(string(data)), nil
 }
 
-// writeToClipboard writes content to system clipboard
-func (c *CLI) writeToClipboard(content []byte) error {
-	if err := clipboard.Write(content); err != nil {
+// writeToClipboard writes content to system clipboard from a reader
+func (c *CLI) writeToClipboard(r io.Reader, preview string) error {
+	if err := c.clipboard.Write(r); err != nil {
 		return fmt.Errorf("failed to write to clipboard: %w", err)
 	}
 
-	fmt.Printf("Copied to clipboard: %s\n", c.truncatePreview(string(content)))
+	fmt.Printf("Copied to clipboard: %s\n", c.truncatePreview(preview))
 	return nil
 }
 

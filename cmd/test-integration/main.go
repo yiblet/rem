@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/yiblet/rem/internal/clipboard/mockboard"
 	"github.com/yiblet/rem/internal/queue"
 	"github.com/yiblet/rem/internal/store/memstore"
 	"github.com/yiblet/rem/internal/tui"
@@ -86,7 +87,8 @@ func main() {
 	}
 
 	// Create model with specific dimensions
-	model := tui.NewModel(tuiItems)
+	clip := mockboard.New()
+	model := tui.NewModel(tuiItems, clip)
 	model.UpdateMockSize(120, 20)
 
 	// Render the view
