@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"golang.design/x/clipboard"
+	"github.com/yiblet/rem/internal/clipboard"
 )
 
 // PaneType represents which pane is focused
@@ -831,14 +831,10 @@ func (a *AppModel) copyToClipboard() tea.Cmd {
 		return a.setFlashMessage(fmt.Sprintf("Error reading content: %v", err), 2*time.Second)
 	}
 
-	// Initialize clipboard
-	err = clipboard.Init()
-	if err != nil {
-		return a.setFlashMessage(fmt.Sprintf("Error initializing clipboard: %v", err), 2*time.Second)
-	}
-
 	// Write to clipboard
-	clipboard.Write(clipboard.FmtText, []byte(content))
+	if err := clipboard.Write([]byte(content)); err != nil {
+		return a.setFlashMessage(fmt.Sprintf("Error writing to clipboard: %v", err), 2*time.Second)
+	}
 
 	// Show success message with byte count
 	byteCount := len(content)

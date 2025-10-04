@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/yiblet/rem/internal/clipboard"
 	"github.com/yiblet/rem/internal/queue"
 	"github.com/yiblet/rem/internal/store"
 	"github.com/yiblet/rem/internal/store/dbstore"
 	"github.com/yiblet/rem/internal/tui"
-	"golang.design/x/clipboard"
 )
 
 // CLI handles the command-line interface
@@ -332,12 +332,11 @@ func (c *CLI) launchTUI() error {
 
 // readFromClipboard reads content from system clipboard
 func (c *CLI) readFromClipboard() (io.ReadSeeker, error) {
-	err := clipboard.Init()
+	data, err := clipboard.Read()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize clipboard: %w", err)
+		return nil, fmt.Errorf("failed to read clipboard: %w", err)
 	}
 
-	data := clipboard.Read(clipboard.FmtText)
 	if len(data) == 0 {
 		return nil, fmt.Errorf("clipboard is empty")
 	}
@@ -372,12 +371,10 @@ func (c *CLI) readFromStdin() (io.ReadSeeker, error) {
 
 // writeToClipboard writes content to system clipboard
 func (c *CLI) writeToClipboard(content []byte) error {
-	err := clipboard.Init()
-	if err != nil {
-		return fmt.Errorf("failed to initialize clipboard: %w", err)
+	if err := clipboard.Write(content); err != nil {
+		return fmt.Errorf("failed to write to clipboard: %w", err)
 	}
 
-	clipboard.Write(clipboard.FmtText, content)
 	fmt.Printf("Copied to clipboard: %s\n", c.truncatePreview(string(content)))
 	return nil
 }
