@@ -145,10 +145,20 @@ func RightPaneView(model RightPaneModel, content *StackItem, searchModel SearchM
 		contentBuilder.WriteString(lipgloss.NewStyle().Bold(true).Render("Content") + "\n\n")
 		contentBuilder.WriteString("No content selected")
 	} else {
-		// Build title with scroll indicator
+		// Build title with item title (Preview contains the title)
 		title := fmt.Sprintf("Content [%d]", selectedIndex)
 		if focused {
 			title = "● " + title // Active indicator
+		}
+
+		// Add item title if available (truncate to fit available width)
+		if content.Preview != "" {
+			maxTitleWidth := model.Width - 20 // Account for borders, padding, and Content [N] text
+			itemTitle := content.Preview
+			if len(itemTitle) > maxTitleWidth {
+				itemTitle = itemTitle[:maxTitleWidth-3] + "..."
+			}
+			title += ": " + itemTitle
 		}
 
 		// Calculate available height once

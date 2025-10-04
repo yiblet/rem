@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/yiblet/rem/internal/queue"
-	"github.com/yiblet/rem/internal/remfs"
+	"github.com/yiblet/rem/internal/store/memstore"
 	"github.com/yiblet/rem/internal/tui"
 )
 
@@ -14,41 +14,73 @@ func main() {
 	fmt.Println("Testing TUI Border Fix")
 	fmt.Println("=========================")
 
-	// Create filesystem and queue manager
-	remFS, err := remfs.New()
-	if err != nil {
-		log.Fatalf("Error creating rem filesystem: %v", err)
-	}
-
-	sm, err := queue.NewStackManager(remFS)
+	// Create in-memory store and queue manager
+	store := memstore.NewMemoryStore()
+	qm, err := queue.NewQueueManager(store)
 	if err != nil {
 		log.Fatalf("Error creating queue manager: %v", err)
 	}
+	defer qm.Close()
 
-	// Get items from queue
-	queueItems, err := sm.List()
+	// Add some test items if queue is empty
+	items, err := qm.List()
 	if err != nil {
 		log.Fatalf("Error listing queue items: %v", err)
 	}
 
-	if len(queueItems) == 0 {
-		fmt.Println("No items in queue. Run 'go run ./cmd/demo/' first.")
-		return
+	if len(items) == 0 {
+		// Add test items
+		testContent := []string{
+			"Hello, World! This is test content.",
+			"package main\n\nfunc main() {\n    println(\"test\")\n}",
+			"Some more test content for the TUI.",
+		}
+		for _, content := range testContent {
+			_, err := qm.Enqueue(strings.NewReader(content), "")
+			if err != nil {
+				log.Printf("Error enqueuing item: %v", err)
+			}
+		}
+		// Refresh items list
+		items, err = qm.List()
+		if err != nil {
+			log.Fatalf("Error listing queue items: %v", err)
+		}
 	}
 
 	// Convert queue items to TUI items
 	var tuiItems []*tui.StackItem
-	for _, sItem := range queueItems[:min(5, len(queueItems))] { // Take first 5 items
-		contentReader, err := sItem.GetContentReader(sm.FileSystem())
+	for _, item := range items[:min(5, len(items))] { // Take first 5 items
+		contentReader, err := qm.GetContent(item.ID)
 		if err != nil {
 			fmt.Printf("Error getting content reader: %v\n", err)
 			continue
 		}
 
+		// Capture item ID for delete function
+		itemID := item.ID
+
 		tuiItem := &tui.StackItem{
-			Content: contentReader,
-			Preview: sItem.Preview,
-			ViewPos: 0,
+			ID:       fmt.Sprintf("%d", item.ID),
+			Content:  contentReader,
+			Preview:  item.Title,
+			ViewPos:  0,
+			IsBinary: item.IsBinary,
+			Size:     item.Size,
+			SHA256:   item.SHA256,
+			DeleteFunc: func() error {
+				// Find index and delete
+				allItems, err := qm.List()
+				if err != nil {
+					return err
+				}
+				for idx, itm := range allItems {
+					if itm.ID == itemID {
+						return qm.Delete(idx)
+					}
+				}
+				return fmt.Errorf("item not found")
+			},
 		}
 		tuiItems = append(tuiItems, tuiItem)
 	}

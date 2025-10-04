@@ -6,18 +6,19 @@ import (
 
 // Args represents the top-level command structure
 type Args struct {
-	Store   *StoreCmd  `arg:"subcommand:store" help:"Push content to the queue"`
-	Get     *GetCmd    `arg:"subcommand:get" help:"Access content from the queue"`
-	Config  *ConfigCmd `arg:"subcommand:config" help:"Manage rem configuration"`
-	Clear   *ClearCmd  `arg:"subcommand:clear" help:"Clear all history from the queue"`
-	Search  *SearchCmd `arg:"subcommand:search" help:"Search history for content matching a regex pattern"`
-	History *string    `arg:"--history,env:REM_HISTORY" help:"Custom history directory location (overrides default ~/.config/rem/history/)"`
+	Store  *StoreCmd  `arg:"subcommand:store" help:"Push content to the queue"`
+	Get    *GetCmd    `arg:"subcommand:get" help:"Access content from the queue"`
+	Config *ConfigCmd `arg:"subcommand:config" help:"Manage rem configuration"`
+	Clear  *ClearCmd  `arg:"subcommand:clear" help:"Clear all history from the queue"`
+	Search *SearchCmd `arg:"subcommand:search" help:"Search history for content matching a regex pattern"`
+	DBPath *string    `arg:"--db-path,env:REM_DB_PATH" help:"Custom database path (overrides default ~/.config/rem/rem.db)"`
 }
 
 // StoreCmd represents the 'rem store' command (pushes to top of queue)
 type StoreCmd struct {
 	Files     []string `arg:"positional" help:"Files to read from (optional)"`
 	Clipboard bool     `arg:"-c,--clipboard" help:"Read from clipboard"`
+	Title     *string  `arg:"-t,--title" help:"Optional title for the stored item (max 80 chars)"`
 }
 
 // GetCmd represents the 'rem get' command (accesses queue by index)
@@ -36,12 +37,12 @@ type ConfigCmd struct {
 
 // ConfigGetCmd represents the 'rem config get' command
 type ConfigGetCmd struct {
-	Key string `arg:"positional,required" help:"Configuration key to get (history-limit, show-binary, history-location)"`
+	Key string `arg:"positional,required" help:"Configuration key to get (history_limit, show_binary, db_version)"`
 }
 
 // ConfigSetCmd represents the 'rem config set' command
 type ConfigSetCmd struct {
-	Key   string `arg:"positional,required" help:"Configuration key to set (history-limit, show-binary, history-location)"`
+	Key   string `arg:"positional,required" help:"Configuration key to set (history_limit, show_binary)"`
 	Value string `arg:"positional,required" help:"Configuration value to set"`
 }
 
@@ -56,9 +57,12 @@ type ClearCmd struct {
 
 // SearchCmd represents the 'rem search' command (searches history)
 type SearchCmd struct {
-	Pattern    string `arg:"positional,required" help:"Regex pattern to search for"`
-	IndexOnly  bool   `arg:"-i,--index-only" help:"Output only the index of the first match"`
-	AllMatches bool   `arg:"-a,--all" help:"Show all matching items (not just the first)"`
+	Pattern       string `arg:"positional,required" help:"Regex pattern to search for"`
+	IndexOnly     bool   `arg:"-i,--index-only" help:"Output only the index of the first match"`
+	AllMatches    bool   `arg:"-a,--all" help:"Show all matching items (not just the first)"`
+	SearchTitle   bool   `arg:"--title" help:"Search in titles only"`
+	SearchContent bool   `arg:"--content" help:"Search in content only"`
+	CaseSensitive bool   `arg:"-s,--case-sensitive" help:"Case-sensitive search"`
 }
 
 // Description returns the program description
@@ -75,10 +79,10 @@ func (Args) Version() string {
 func (Args) Epilogue() string {
 	return `Examples:
   # Store operations
-  echo "hello" | rem store          # Store from stdin
-  rem store file.txt               # Store from file
-  rem store file1.txt file2.txt    # Store multiple files
-  rem store -c                     # Store from clipboard
+  echo "hello" | rem store                    # Store from stdin (auto-generated title)
+  rem store --title "My Note" file.txt        # Store from file with custom title
+  rem store -t "Important" file1.txt file2.txt # Store multiple files with title
+  rem store -c                                # Store from clipboard
 
   # Get operations
   rem get                          # Interactive TUI browser
@@ -88,8 +92,8 @@ func (Args) Epilogue() string {
 
   # Configuration operations
   rem config list                  # List all configuration values
-  rem config get history-limit     # Get specific configuration value
-  rem config set history-limit 50  # Set configuration value
+  rem config get history_limit     # Get specific configuration value
+  rem config set history_limit 50  # Set configuration value
 
   # History management
   rem clear                        # Clear all history (with confirmation)
@@ -98,6 +102,13 @@ func (Args) Epilogue() string {
   rem search -i 'pattern'          # Output only the index of first match
   rem search -a 'pattern'          # Concatenate all matching items
   rem search -a -i 'pattern'       # Show indexes of all matching items
+  rem search --title 'config'      # Search titles only
+  rem search --content 'password'  # Search content only
+  rem search -s 'CaseSensitive'    # Case-sensitive search
+
+  # Database path
+  rem --db-path /custom/rem.db store file.txt  # Use custom database location
+  export REM_DB_PATH=/custom/rem.db            # Set via environment variable
 
 For more information, visit: https://github.com/yiblet/rem`
 }
@@ -178,7 +189,7 @@ func (c *ConfigCmd) Validate() error {
 
 // Validate validates config get command arguments
 func (g *ConfigGetCmd) Validate() error {
-	validKeys := []string{"history-limit", "show-binary", "history-location"}
+	validKeys := []string{"history_limit", "show_binary", "db_version"}
 	for _, validKey := range validKeys {
 		if g.Key == validKey {
 			return nil
@@ -189,7 +200,7 @@ func (g *ConfigGetCmd) Validate() error {
 
 // Validate validates config set command arguments
 func (s *ConfigSetCmd) Validate() error {
-	validKeys := []string{"history-limit", "show-binary", "history-location"}
+	validKeys := []string{"history_limit", "show_binary"}
 	for _, validKey := range validKeys {
 		if s.Key == validKey {
 			return nil

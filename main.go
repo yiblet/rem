@@ -19,7 +19,7 @@ func main() {
 		args.Get = &cli.GetCmd{}
 	}
 
-	// Create CLI instance with args for history location support
+	// Create CLI instance with args for database path support
 	cliHandler, err := cli.NewWithArgs(&args)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)

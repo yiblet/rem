@@ -2,33 +2,31 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"strings"
 
 	"github.com/yiblet/rem/internal/queue"
-	"github.com/yiblet/rem/internal/remfs"
+	"github.com/yiblet/rem/internal/store/memstore"
 )
 
 func main() {
 	fmt.Println("rem Queue Manager Demo")
 
-	// Create filesystem and queue manager
-	remFS, err := remfs.New()
-	if err != nil {
-		log.Fatalf("Failed to create rem filesystem: %v", err)
-	}
-
-	sm, err := queue.NewStackManager(remFS)
+	// Create in-memory store and queue manager
+	store := memstore.NewMemoryStore()
+	qm, err := queue.NewQueueManager(store)
 	if err != nil {
 		log.Fatalf("Failed to create queue manager: %v", err)
 	}
+	defer qm.Close()
 
 	// Show initial state
-	size, err := sm.Size()
+	items, err := qm.List()
 	if err != nil {
-		log.Fatalf("Failed to get size: %v", err)
+		log.Fatalf("Failed to get initial items: %v", err)
 	}
-	fmt.Printf("Initial queue size: %d\n\n", size)
+	fmt.Printf("Initial queue size: %d\n\n", len(items))
 
 	// Add some test content
 	testContent := []string{
@@ -41,36 +39,31 @@ func main() {
 
 	fmt.Println("Adding items to queue:")
 	for i, content := range testContent {
-		item, err := sm.Push(strings.NewReader(content))
+		item, err := qm.Enqueue(strings.NewReader(content), "")
 		if err != nil {
-			log.Printf("Failed to push item %d: %v", i, err)
+			log.Printf("Failed to enqueue item %d: %v", i, err)
 			continue
 		}
-		fmt.Printf("%d. %s\n", i+1, item.Preview)
+		fmt.Printf("%d. %s\n", i+1, item.Title)
 	}
 
 	// Show final state
-	size, err = sm.Size()
+	items, err = qm.List()
 	if err != nil {
-		log.Fatalf("Failed to get final size: %v", err)
+		log.Fatalf("Failed to get final items: %v", err)
 	}
-	fmt.Printf("\nFinal queue size: %d\n\n", size)
+	fmt.Printf("\nFinal queue size: %d\n\n", len(items))
 
 	// List all items
 	fmt.Println("Queue contents (newest first - LIFO):")
-	items, err := sm.List()
-	if err != nil {
-		log.Fatalf("Failed to list items: %v", err)
-	}
-
 	for i, item := range items {
-		fmt.Printf("%d. [%s] %s\n", i, item.Timestamp.Format("15:04:05"), item.Preview)
+		fmt.Printf("%d. [%s] %s\n", i, item.Timestamp.Format("15:04:05"), item.Title)
 	}
 
 	// Demonstrate getting specific item
 	if len(items) > 0 {
 		fmt.Printf("\nContent of item 0 (newest):\n")
-		reader, err := items[0].GetContentReader(sm.FileSystem())
+		reader, err := qm.GetContent(items[0].ID)
 		if err != nil {
 			log.Printf("Failed to get content reader: %v", err)
 		} else {
@@ -79,7 +72,7 @@ func main() {
 			// Read first 200 bytes
 			buffer := make([]byte, 200)
 			n, err := reader.Read(buffer)
-			if err != nil && err.Error() != "EOF" {
+			if err != nil && err != io.EOF {
 				log.Printf("Failed to read content: %v", err)
 			} else {
 				fmt.Printf("%s\n", string(buffer[:n]))
@@ -87,5 +80,5 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nDemo complete! Queue stored in: ~/.config/rem/content/\n")
+	fmt.Printf("\nDemo complete! (Using in-memory store)\n")
 }

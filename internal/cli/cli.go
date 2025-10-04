@@ -4,20 +4,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/yiblet/rem/internal/config"
 	"github.com/yiblet/rem/internal/queue"
-	"github.com/yiblet/rem/internal/remfs"
+	"github.com/yiblet/rem/internal/store"
+	"github.com/yiblet/rem/internal/store/dbstore"
 	"github.com/yiblet/rem/internal/tui"
 	"golang.design/x/clipboard"
 )
 
 // CLI handles the command-line interface
 type CLI struct {
-	stackManager *queue.StackManager
-	filesystem   queue.FileSystem
+	queueManager *queue.QueueManager
+	store        store.Store
 }
 
 // New creates a new CLI instance
@@ -25,39 +27,51 @@ func New() (*CLI, error) {
 	return NewWithArgs(nil)
 }
 
-// NewWithArgs creates a new CLI instance with custom arguments for history location
+// NewWithArgs creates a new CLI instance with custom arguments for database path
 func NewWithArgs(args *Args) (*CLI, error) {
-	var historyPath string
-	if args != nil && args.History != nil {
-		historyPath = *args.History
+	// Determine database path (precedence: flag > env var > default)
+	var dbPath string
+	if args != nil && args.DBPath != nil {
+		dbPath = *args.DBPath
+	} else {
+		// Use default path
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		dbPath = filepath.Join(homeDir, ".config", "rem", "rem.db")
 	}
 
-	// Create filesystem with custom history location
-	remFS, err := remfs.NewWithHistoryPath(historyPath)
-	if err != nil {
-		return nil, fmt.Errorf("error creating rem filesystem: %w", err)
+	// Ensure directory exists
+	dbDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	// Load configuration to get history limit
-	configManager, err := config.NewConfigManager()
+	// Create SQLite store
+	sqliteStore, err := dbstore.NewSQLiteStore(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("error creating config manager: %w", err)
+		return nil, fmt.Errorf("failed to create database store: %w", err)
 	}
 
-	cfg, err := configManager.Load()
-	if err != nil {
-		return nil, fmt.Errorf("error loading configuration: %w", err)
+	// Load history limit from config store
+	historyLimit := queue.DefaultMaxQueueSize
+	if limitStr, err := sqliteStore.Config().Get("history_limit"); err == nil {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			historyLimit = limit
+		}
 	}
 
-	// Create queue manager with configured history limit
-	sm, err := queue.NewQueueManagerWithConfig(remFS, cfg.HistoryLimit)
+	// Create queue manager with store
+	qm, err := queue.NewQueueManagerWithConfig(sqliteStore, historyLimit)
 	if err != nil {
-		return nil, fmt.Errorf("error creating queue manager: %w", err)
+		sqliteStore.Close()
+		return nil, fmt.Errorf("failed to create queue manager: %w", err)
 	}
 
 	return &CLI{
-		stackManager: sm,
-		filesystem:   remFS,
+		queueManager: qm,
+		store:        sqliteStore,
 	}, nil
 }
 
@@ -86,6 +100,12 @@ func (c *CLI) Execute(args *Args) error {
 
 // executeStore handles the 'rem store' command
 func (c *CLI) executeStore(cmd *StoreCmd) error {
+	// Get title if provided
+	var title string
+	if cmd.Title != nil {
+		title = *cmd.Title
+	}
+
 	switch {
 	case cmd.Clipboard:
 		// Read from clipboard
@@ -93,11 +113,11 @@ func (c *CLI) executeStore(cmd *StoreCmd) error {
 		if err != nil {
 			return fmt.Errorf("failed to read content: %w", err)
 		}
-		item, err := c.stackManager.Push(content)
+		item, err := c.queueManager.Enqueue(content, title)
 		if err != nil {
 			return fmt.Errorf("failed to store content: %w", err)
 		}
-		fmt.Printf("Stored: %s\n", item.Preview)
+		fmt.Printf("Stored: %s\n", item.Title)
 		return nil
 
 	case len(cmd.Files) > 0:
@@ -107,12 +127,12 @@ func (c *CLI) executeStore(cmd *StoreCmd) error {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", filename, err)
 			}
-			item, err := c.stackManager.Push(content)
+			item, err := c.queueManager.Enqueue(content, title)
 			content.Close() // Close file handle after enqueue
 			if err != nil {
 				return fmt.Errorf("failed to store content from %s: %w", filename, err)
 			}
-			fmt.Printf("Stored from %s: %s\n", filename, item.Preview)
+			fmt.Printf("Stored from %s: %s\n", filename, item.Title)
 		}
 		return nil
 
@@ -122,11 +142,11 @@ func (c *CLI) executeStore(cmd *StoreCmd) error {
 		if err != nil {
 			return fmt.Errorf("failed to read content: %w", err)
 		}
-		item, err := c.stackManager.Push(content)
+		item, err := c.queueManager.Enqueue(content, title)
 		if err != nil {
 			return fmt.Errorf("failed to store content: %w", err)
 		}
-		fmt.Printf("Stored: %s\n", item.Preview)
+		fmt.Printf("Stored: %s\n", item.Title)
 		return nil
 	}
 }
@@ -141,13 +161,13 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 	index := *cmd.Index
 
 	// Get item from queue
-	item, err := c.stackManager.Get(index)
+	item, err := c.queueManager.Get(index)
 	if err != nil {
 		return fmt.Errorf("failed to get item at index %d: %w", index, err)
 	}
 
-	// Get content reader
-	reader, err := item.GetContentReader(c.filesystem)
+	// Get content reader using ID
+	reader, err := c.queueManager.GetContent(item.ID)
 	if err != nil {
 		return fmt.Errorf("failed to read content: %w", err)
 	}
@@ -174,9 +194,8 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 			return fmt.Errorf("failed to write to file: %w", err)
 		}
 
-		// Read a preview for display
-		preview := item.Preview
-		fmt.Printf("Written to %s: %s\n", *cmd.File, preview)
+		// Display title
+		fmt.Printf("Written to %s: %s\n", *cmd.File, item.Title)
 		return nil
 	default:
 		// Stream to stdout
@@ -187,26 +206,21 @@ func (c *CLI) executeGet(cmd *GetCmd) error {
 
 // executeConfig handles the 'rem config' command
 func (c *CLI) executeConfig(cmd *ConfigCmd) error {
-	configManager, err := config.NewConfigManager()
-	if err != nil {
-		return fmt.Errorf("failed to create config manager: %w", err)
-	}
-
 	switch {
 	case cmd.Get != nil:
-		return c.executeConfigGet(configManager, cmd.Get)
+		return c.executeConfigGet(cmd.Get)
 	case cmd.Set != nil:
-		return c.executeConfigSet(configManager, cmd.Set)
+		return c.executeConfigSet(cmd.Set)
 	case cmd.List != nil:
-		return c.executeConfigList(configManager, cmd.List)
+		return c.executeConfigList(cmd.List)
 	default:
 		return fmt.Errorf("no config subcommand specified")
 	}
 }
 
 // executeConfigGet handles the 'rem config get' command
-func (c *CLI) executeConfigGet(configManager *config.ConfigManager, cmd *ConfigGetCmd) error {
-	value, err := configManager.Get(cmd.Key)
+func (c *CLI) executeConfigGet(cmd *ConfigGetCmd) error {
+	value, err := c.store.Config().Get(cmd.Key)
 	if err != nil {
 		return fmt.Errorf("failed to get config value: %w", err)
 	}
@@ -216,8 +230,22 @@ func (c *CLI) executeConfigGet(configManager *config.ConfigManager, cmd *ConfigG
 }
 
 // executeConfigSet handles the 'rem config set' command
-func (c *CLI) executeConfigSet(configManager *config.ConfigManager, cmd *ConfigSetCmd) error {
-	if err := configManager.Update(cmd.Key, cmd.Value); err != nil {
+func (c *CLI) executeConfigSet(cmd *ConfigSetCmd) error {
+	// Validate the value based on the key
+	switch cmd.Key {
+	case "history_limit":
+		// Validate it's a positive integer
+		if limit, err := strconv.Atoi(cmd.Value); err != nil || limit <= 0 {
+			return fmt.Errorf("history_limit must be a positive integer")
+		}
+	case "show_binary":
+		// Validate it's a boolean
+		if cmd.Value != "true" && cmd.Value != "false" {
+			return fmt.Errorf("show_binary must be 'true' or 'false'")
+		}
+	}
+
+	if err := c.store.Config().Set(cmd.Key, cmd.Value); err != nil {
 		return fmt.Errorf("failed to set config value: %w", err)
 	}
 
@@ -226,8 +254,8 @@ func (c *CLI) executeConfigSet(configManager *config.ConfigManager, cmd *ConfigS
 }
 
 // executeConfigList handles the 'rem config list' command
-func (c *CLI) executeConfigList(configManager *config.ConfigManager, cmd *ConfigListCmd) error {
-	values, err := configManager.List()
+func (c *CLI) executeConfigList(cmd *ConfigListCmd) error {
+	values, err := c.store.Config().List()
 	if err != nil {
 		return fmt.Errorf("failed to list config values: %w", err)
 	}
@@ -242,34 +270,44 @@ func (c *CLI) executeConfigList(configManager *config.ConfigManager, cmd *Config
 // launchTUI starts the interactive TUI
 func (c *CLI) launchTUI() error {
 	// Get items from queue
-	stackItems, err := c.stackManager.List()
+	queueItems, err := c.queueManager.List()
 	if err != nil {
 		return fmt.Errorf("error listing queue items: %w", err)
 	}
 
 	// Convert queue items to TUI items
 	var tuiItems []*tui.StackItem
-	for _, sItem := range stackItems {
-		// Get content reader
-		contentReader, err := sItem.GetContentReader(c.stackManager.FileSystem())
+	for _, item := range queueItems {
+		// Get content reader using ID
+		contentReader, err := c.queueManager.GetContent(item.ID)
 		if err != nil {
-			fmt.Printf("Warning: Error getting content reader: %v\n", err)
+			fmt.Printf("Warning: Error getting content reader for item %d: %v\n", item.ID, err)
 			continue
 		}
 
 		// Capture ID for closure
-		itemID := sItem.ID
+		itemID := item.ID
 
 		tuiItem := &tui.StackItem{
-			ID:       itemID,
+			ID:       fmt.Sprintf("%d", itemID),
 			Content:  contentReader,
-			Preview:  sItem.Preview,
+			Preview:  item.Title, // Use title as preview
 			ViewPos:  0,
-			IsBinary: sItem.IsBinary,
-			Size:     sItem.Size,
-			SHA256:   sItem.SHA256,
+			IsBinary: item.IsBinary,
+			Size:     item.Size,
+			SHA256:   item.SHA256,
 			DeleteFunc: func() error {
-				return c.stackManager.DeleteByID(itemID)
+				// Delete by finding index of item with this ID
+				items, err := c.queueManager.List()
+				if err != nil {
+					return err
+				}
+				for idx, itm := range items {
+					if itm.ID == itemID {
+						return c.queueManager.Delete(idx)
+					}
+				}
+				return fmt.Errorf("item %d not found", itemID)
 			},
 		}
 		tuiItems = append(tuiItems, tuiItem)
@@ -358,7 +396,7 @@ func (c *CLI) writeToFile(filename string, content []byte) error {
 // executeClear handles the 'rem clear' command
 func (c *CLI) executeClear(cmd *ClearCmd) error {
 	// Get current queue size
-	items, err := c.stackManager.List()
+	items, err := c.queueManager.List()
 	if err != nil {
 		return fmt.Errorf("failed to list items: %w", err)
 	}
@@ -380,8 +418,8 @@ func (c *CLI) executeClear(cmd *ClearCmd) error {
 		}
 	}
 
-	// Clear the queue by deleting all history files
-	if err := c.stackManager.Clear(); err != nil {
+	// Clear the queue
+	if err := c.queueManager.Clear(); err != nil {
 		return fmt.Errorf("failed to clear history: %w", err)
 	}
 
@@ -391,61 +429,70 @@ func (c *CLI) executeClear(cmd *ClearCmd) error {
 
 // executeSearch handles the 'rem search' command
 func (c *CLI) executeSearch(cmd *SearchCmd) error {
-	// Get all items from queue
-	items, err := c.stackManager.List()
+	// Build search query
+	searchQuery := &store.SearchQuery{
+		Pattern:       cmd.Pattern,
+		SearchTitle:   cmd.SearchTitle,
+		SearchContent: cmd.SearchContent,
+		CaseSensitive: cmd.CaseSensitive,
+		Limit:         0, // No limit
+	}
+
+	// If AllMatches is false, limit to 1 result
+	if !cmd.AllMatches {
+		searchQuery.Limit = 1
+	}
+
+	// Perform search using store
+	results, err := c.store.History().Search(searchQuery)
+	if err != nil {
+		return fmt.Errorf("search failed: %w", err)
+	}
+
+	if len(results) == 0 {
+		return fmt.Errorf("no matches found for pattern: %s", cmd.Pattern)
+	}
+
+	// Get all items to find indexes of matched items
+	allItems, err := c.queueManager.List()
 	if err != nil {
 		return fmt.Errorf("failed to list items: %w", err)
 	}
 
-	if len(items) == 0 {
-		return fmt.Errorf("queue is empty")
+	// Create a map of ID to index
+	idToIndex := make(map[uint]int)
+	for idx, item := range allItems {
+		idToIndex[item.ID] = idx
 	}
 
-	// Search for pattern in items
-	matches := c.stackManager.SearchIter(cmd.Pattern)
-	matchCount := 0
-	for match := range matches.Iter() {
-		i := matchCount
-		matchCount++
+	// Output results
+	for i, result := range results {
+		index, ok := idToIndex[result.ID]
+		if !ok {
+			// Item was deleted between search and now
+			continue
+		}
 
 		if cmd.IndexOnly {
-			fmt.Printf("%d\n", match.Index)
+			fmt.Printf("%d\n", index)
 		} else {
-			err := func() error {
-				if i > 0 {
-					fmt.Println()
-				}
-				reader, err := match.Item.GetContentReader(c.filesystem)
-				if err != nil {
-					return fmt.Errorf("failed to read content for match %d: %w", i, err)
-				}
-				defer reader.Close()
-				if _, err := io.Copy(os.Stdout, reader); err != nil {
-					return fmt.Errorf("failed to write content for match %d: %w", i, err)
-				}
-
-				return nil
-			}()
-
-			if err != nil {
-				return err
+			if i > 0 {
+				fmt.Println()
 			}
-
+			// Get content reader using ID
+			reader, err := c.queueManager.GetContent(result.ID)
+			if err != nil {
+				return fmt.Errorf("failed to read content for match %d: %w", i, err)
+			}
+			if _, err := io.Copy(os.Stdout, reader); err != nil {
+				reader.Close()
+				return fmt.Errorf("failed to write content for match %d: %w", i, err)
+			}
+			reader.Close()
 		}
-
-		if !cmd.AllMatches {
-			break
-		}
-	}
-	if matches.Err() != nil {
-		return matches.Err()
 	}
 
-	if matchCount == 0 {
-		return fmt.Errorf("no matches found for pattern: %s", cmd.Pattern)
-	}
-
-	return err
+	return nil
 }
 
 // truncatePreview creates a truncated preview of content for display

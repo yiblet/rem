@@ -5,40 +5,42 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/yiblet/rem/internal/remfs"
 )
 
-func TestNewWithArgs_DefaultHistory(t *testing.T) {
+func TestNewWithArgs_DefaultDB(t *testing.T) {
 	// Create temporary home directory
 	tempDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tempDir)
 
-	// Test CLI creation without custom history path
+	// Test CLI creation without custom database path
 	args := &Args{}
 	cli, err := NewWithArgs(args)
 	if err != nil {
 		t.Fatalf("NewWithArgs failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(tempDir, remfs.ConfigDir, remfs.DefaultHistDir)
-	if cli.filesystem.(*remfs.RemFS).Root() != expectedPath {
-		t.Errorf("Expected filesystem root %s, got %s",
-			expectedPath, cli.filesystem.(*remfs.RemFS).Root())
+	// Verify database was created in default location
+	expectedDBPath := filepath.Join(tempDir, ".config", "rem", "rem.db")
+	if _, err := os.Stat(expectedDBPath); os.IsNotExist(err) {
+		t.Errorf("Expected database at %s, but it doesn't exist", expectedDBPath)
+	}
+
+	// Cleanup
+	if cli.store != nil {
+		cli.store.Close()
 	}
 }
 
-func TestNewWithArgs_CustomHistoryPath(t *testing.T) {
-	// Create temporary directory for custom history
+func TestNewWithArgs_CustomDBPath(t *testing.T) {
+	// Create temporary directory for custom database
 	tempDir := t.TempDir()
-	customPath := filepath.Join(tempDir, "my-custom-history")
+	customDBPath := filepath.Join(tempDir, "custom.db")
 
-	// Test CLI creation with custom history path
-	historyPath := customPath
+	// Test CLI creation with custom database path
 	args := &Args{
-		History: &historyPath,
+		DBPath: &customDBPath,
 	}
 
 	cli, err := NewWithArgs(args)
@@ -46,39 +48,14 @@ func TestNewWithArgs_CustomHistoryPath(t *testing.T) {
 		t.Fatalf("NewWithArgs with custom path failed: %v", err)
 	}
 
-	if cli.filesystem.(*remfs.RemFS).Root() != customPath {
-		t.Errorf("Expected filesystem root %s, got %s",
-			customPath, cli.filesystem.(*remfs.RemFS).Root())
+	// Check that database was created at custom location
+	if _, err := os.Stat(customDBPath); os.IsNotExist(err) {
+		t.Errorf("Custom database should be created: %s", customDBPath)
 	}
 
-	// Check that directory was created
-	if _, err := os.Stat(customPath); os.IsNotExist(err) {
-		t.Errorf("Custom history directory should be created: %s", customPath)
-	}
-}
-
-func TestNewWithArgs_RelativeHistoryPath(t *testing.T) {
-	// Create temporary home directory
-	tempDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tempDir)
-
-	// Test CLI creation with relative history path
-	relativePath := "custom-rel-path"
-	args := &Args{
-		History: &relativePath,
-	}
-
-	cli, err := NewWithArgs(args)
-	if err != nil {
-		t.Fatalf("NewWithArgs with relative path failed: %v", err)
-	}
-
-	expectedPath := filepath.Join(tempDir, remfs.ConfigDir, relativePath)
-	if cli.filesystem.(*remfs.RemFS).Root() != expectedPath {
-		t.Errorf("Expected filesystem root %s, got %s",
-			expectedPath, cli.filesystem.(*remfs.RemFS).Root())
+	// Cleanup
+	if cli.store != nil {
+		cli.store.Close()
 	}
 }
 
@@ -95,10 +72,15 @@ func TestNewWithArgs_NilArgs(t *testing.T) {
 		t.Fatalf("NewWithArgs with nil args failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(tempDir, remfs.ConfigDir, remfs.DefaultHistDir)
-	if cli.filesystem.(*remfs.RemFS).Root() != expectedPath {
-		t.Errorf("Expected filesystem root %s, got %s",
-			expectedPath, cli.filesystem.(*remfs.RemFS).Root())
+	// Verify database was created in default location
+	expectedDBPath := filepath.Join(tempDir, ".config", "rem", "rem.db")
+	if _, err := os.Stat(expectedDBPath); os.IsNotExist(err) {
+		t.Errorf("Expected database at %s, but it doesn't exist", expectedDBPath)
+	}
+
+	// Cleanup
+	if cli.store != nil {
+		cli.store.Close()
 	}
 }
 
@@ -109,16 +91,21 @@ func TestNew_DefaultBehavior(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tempDir)
 
-	// Test CLI creation using legacy New() function
+	// Test CLI creation using New() function
 	cli, err := New()
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(tempDir, remfs.ConfigDir, remfs.DefaultHistDir)
-	if cli.filesystem.(*remfs.RemFS).Root() != expectedPath {
-		t.Errorf("Expected filesystem root %s, got %s",
-			expectedPath, cli.filesystem.(*remfs.RemFS).Root())
+	// Verify database was created in default location
+	expectedDBPath := filepath.Join(tempDir, ".config", "rem", "rem.db")
+	if _, err := os.Stat(expectedDBPath); os.IsNotExist(err) {
+		t.Errorf("Expected database at %s, but it doesn't exist", expectedDBPath)
+	}
+
+	// Cleanup
+	if cli.store != nil {
+		cli.store.Close()
 	}
 }
 
@@ -176,10 +163,10 @@ func TestArgsValidation_ValidCases(t *testing.T) {
 			},
 		},
 		{
-			name: "with custom history",
+			name: "with custom db path",
 			args: Args{
-				History: stringPtr("/tmp/custom-history"),
-				Get:     &GetCmd{},
+				DBPath: stringPtr("/tmp/custom.db"),
+				Get:    &GetCmd{},
 			},
 		},
 	}
@@ -248,7 +235,7 @@ func TestConfigCommands_ValidationCases(t *testing.T) {
 			name: "config get valid",
 			args: Args{
 				Config: &ConfigCmd{
-					Get: &ConfigGetCmd{Key: "history-limit"},
+					Get: &ConfigGetCmd{Key: "history_limit"},
 				},
 			},
 			expectErr: false,
@@ -257,7 +244,7 @@ func TestConfigCommands_ValidationCases(t *testing.T) {
 			name: "config set valid",
 			args: Args{
 				Config: &ConfigCmd{
-					Set: &ConfigSetCmd{Key: "history-limit", Value: "100"},
+					Set: &ConfigSetCmd{Key: "history_limit", Value: "100"},
 				},
 			},
 			expectErr: false,
@@ -300,8 +287,8 @@ func TestConfigCommands_ValidationCases(t *testing.T) {
 			name: "config multiple subcommands",
 			args: Args{
 				Config: &ConfigCmd{
-					Get:  &ConfigGetCmd{Key: "history-limit"},
-					Set:  &ConfigSetCmd{Key: "history-limit", Value: "100"},
+					Get:  &ConfigGetCmd{Key: "history_limit"},
+					Set:  &ConfigSetCmd{Key: "history_limit", Value: "100"},
 					List: &ConfigListCmd{},
 				},
 			},
@@ -341,6 +328,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create CLI: %v", err)
 		}
+		defer cli.store.Close()
 
 		// Capture output would require more complex setup,
 		// but we can test that it doesn't error
@@ -354,7 +342,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 	t.Run("config get default value", func(t *testing.T) {
 		args := &Args{
 			Config: &ConfigCmd{
-				Get: &ConfigGetCmd{Key: "history-limit"},
+				Get: &ConfigGetCmd{Key: "history_limit"},
 			},
 		}
 
@@ -362,6 +350,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create CLI: %v", err)
 		}
+		defer cli.store.Close()
 
 		err = cli.Execute(args)
 		if err != nil {
@@ -371,10 +360,14 @@ func TestConfigCommands_Integration(t *testing.T) {
 
 	// Test config set and get cycle
 	t.Run("config set and get cycle", func(t *testing.T) {
+		// Use custom DB path for this test
+		dbPath := filepath.Join(tempDir, "test-config.db")
+
 		// First, set a value
 		setArgs := &Args{
+			DBPath: &dbPath,
 			Config: &ConfigCmd{
-				Set: &ConfigSetCmd{Key: "history-limit", Value: "50"},
+				Set: &ConfigSetCmd{Key: "history_limit", Value: "50"},
 			},
 		}
 
@@ -387,11 +380,13 @@ func TestConfigCommands_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("config set failed: %v", err)
 		}
+		cli.store.Close()
 
 		// Then, get the value to verify
 		getArgs := &Args{
+			DBPath: &dbPath,
 			Config: &ConfigCmd{
-				Get: &ConfigGetCmd{Key: "history-limit"},
+				Get: &ConfigGetCmd{Key: "history_limit"},
 			},
 		}
 
@@ -399,6 +394,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create CLI for get: %v", err)
 		}
+		defer cli2.store.Close()
 
 		err = cli2.Execute(getArgs)
 		if err != nil {
@@ -412,13 +408,14 @@ func TestConfigCommands_Integration(t *testing.T) {
 			key   string
 			value string
 		}{
-			{"history-limit", "75"},
-			{"show-binary", "true"},
-			{"history-location", "/custom/test/path"},
+			{"history_limit", "75"},
+			{"show_binary", "true"},
 		}
 
 		for _, tc := range testCases {
+			dbPath := filepath.Join(tempDir, "test-config-"+tc.key+".db")
 			args := &Args{
+				DBPath: &dbPath,
 				Config: &ConfigCmd{
 					Set: &ConfigSetCmd{Key: tc.key, Value: tc.value},
 				},
@@ -430,6 +427,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 			}
 
 			err = cli.Execute(args)
+			cli.store.Close()
 			if err != nil {
 				t.Errorf("config set %s=%s failed: %v", tc.key, tc.value, err)
 			}
@@ -442,14 +440,15 @@ func TestConfigCommands_Integration(t *testing.T) {
 			key   string
 			value string
 		}{
-			{"history-limit", "not-a-number"},
-			{"history-limit", "-5"},
-			{"history-limit", "2000"},
-			{"show-binary", "maybe"},
+			{"history_limit", "not-a-number"},
+			{"history_limit", "-5"},
+			{"show_binary", "maybe"},
 		}
 
 		for _, tc := range testCases {
+			dbPath := filepath.Join(tempDir, "test-invalid-"+tc.key+".db")
 			args := &Args{
+				DBPath: &dbPath,
 				Config: &ConfigCmd{
 					Set: &ConfigSetCmd{Key: tc.key, Value: tc.value},
 				},
@@ -461,6 +460,7 @@ func TestConfigCommands_Integration(t *testing.T) {
 			}
 
 			err = cli.Execute(args)
+			cli.store.Close()
 			if err == nil {
 				t.Errorf("Expected config set %s=%s to fail, but it succeeded", tc.key, tc.value)
 			}
@@ -471,14 +471,13 @@ func TestConfigCommands_Integration(t *testing.T) {
 func TestConfigIntegrationWithQueueManager(t *testing.T) {
 	// Create temporary directories for test
 	tempDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-	os.Setenv("HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "test.db")
 
 	// Set a custom history limit
 	setArgs := &Args{
+		DBPath: &dbPath,
 		Config: &ConfigCmd{
-			Set: &ConfigSetCmd{Key: "history-limit", Value: "5"},
+			Set: &ConfigSetCmd{Key: "history_limit", Value: "5"},
 		},
 	}
 
@@ -491,93 +490,72 @@ func TestConfigIntegrationWithQueueManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to set config: %v", err)
 	}
+	cli.store.Close()
 
 	// Create a new CLI instance that should pick up the configuration
-	cli2, err := NewWithArgs(nil)
+	cli2, err := NewWithArgs(&Args{DBPath: &dbPath})
 	if err != nil {
 		t.Fatalf("Failed to create CLI after config: %v", err)
 	}
+	defer cli2.store.Close()
 
 	// Verify the queue manager has the correct history limit
-	if cli2.stackManager.GetHistoryLimit() != 5 {
-		t.Errorf("Expected queue manager history limit 5, got %d", cli2.stackManager.GetHistoryLimit())
+	if cli2.queueManager.GetHistoryLimit() != 5 {
+		t.Errorf("Expected queue manager history limit 5, got %d", cli2.queueManager.GetHistoryLimit())
 	}
 }
 
-func TestSearchCommand_AllMatches(t *testing.T) {
-	// Create CLI with in-memory filesystem
-	args := &Args{}
+func TestSearchCommand_BasicTitleSearch(t *testing.T) {
+	// Create CLI with custom database
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "search-test.db")
+	args := &Args{DBPath: &dbPath}
 	cli, err := NewWithArgs(args)
 	if err != nil {
 		t.Fatalf("Failed to create CLI: %v", err)
 	}
+	defer cli.store.Close()
 
-	// Add test data
-	testData := []string{
-		"first item with pattern",
-		"second item without keyword",
-		"third item with pattern again",
+	// Add test data with titles
+	testData := []struct {
+		content string
+		title   string
+	}{
+		{"first item content", "pattern match"},
+		{"second item content", "no keyword"},
+		{"third item content", "another pattern"},
 	}
 
 	for _, data := range testData {
-		_, err := cli.stackManager.Enqueue(strings.NewReader(data))
+		_, err := cli.queueManager.Enqueue(strings.NewReader(data.content), data.title)
 		if err != nil {
 			t.Fatalf("Failed to enqueue test data: %v", err)
 		}
 	}
 
-	// Test 1: Search with --all should concatenate all matching content
-	t.Run("all matches concatenate content", func(t *testing.T) {
+	// Test basic title search
+	t.Run("title search finds matches", func(t *testing.T) {
 		searchCmd := &SearchCmd{
-			Pattern:    "pattern",
-			AllMatches: true,
-			IndexOnly:  false,
+			Pattern: "pattern",
 		}
 
 		// Execute search - this would write to stdout in real usage
 		// For testing, we verify no error occurs
 		err := cli.executeSearch(searchCmd)
 		if err != nil {
-			t.Errorf("Search with --all failed: %v", err)
+			t.Errorf("Search failed: %v", err)
 		}
 	})
 
-	// Test 2: Search with --all -i should show all indexes
-	t.Run("all matches index only", func(t *testing.T) {
+	// Test search with no matches
+	t.Run("search with no matches returns error", func(t *testing.T) {
 		searchCmd := &SearchCmd{
-			Pattern:    "pattern",
-			AllMatches: true,
-			IndexOnly:  true,
+			Pattern: "nonexistent",
 		}
 
 		err := cli.executeSearch(searchCmd)
-		if err != nil {
-			t.Errorf("Search with --all -i failed: %v", err)
-		}
-	})
-
-	// Test 3: Search with -i should show first index only
-	t.Run("first match index only", func(t *testing.T) {
-		searchCmd := &SearchCmd{
-			Pattern:   "pattern",
-			IndexOnly: true,
-		}
-
-		err := cli.executeSearch(searchCmd)
-		if err != nil {
-			t.Errorf("Search with -i failed: %v", err)
-		}
-	})
-
-	// Test 4: Default search should return first match content
-	t.Run("first match content", func(t *testing.T) {
-		searchCmd := &SearchCmd{
-			Pattern: "pattern",
-		}
-
-		err := cli.executeSearch(searchCmd)
-		if err != nil {
-			t.Errorf("Default search failed: %v", err)
+		if err == nil {
+			t.Errorf("Expected search to fail with no matches")
 		}
 	})
 }

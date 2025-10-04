@@ -58,22 +58,22 @@ func (s *StringReadSeekCloser) Close() error {
 
 // StackItem represents an item in the rem queue
 type StackItem struct {
-	ID            string // Unique identifier for this item
-	Content       io.ReadSeekCloser
-	Preview       string
-	Lines         []string     // cached wrapped lines (viewport window)
-	LinesStart    int          // first source line number in cache
-	LinesEnd      int          // last source line number in cache
-	CachedWidth   int          // width used for cached lines (0 = not cached)
-	ViewPos       int          // current view position (line number)
-	SearchPattern string       // current search pattern
-	SearchMatches []int        // line numbers with matches
-	SearchIndex   int          // current match index (-1 if no search active)
-	SearchLimitHit bool        // true if search stopped at 99 matches
-	IsBinary      bool         // true if content is binary
-	Size          int64        // size in bytes (useful for binary files)
-	SHA256        string       // SHA256 hash (for binary files)
-	DeleteFunc    func() error // function to delete this item from persistent storage
+	ID             string // Unique identifier for this item
+	Content        io.ReadSeekCloser
+	Preview        string
+	Lines          []string     // cached wrapped lines (viewport window)
+	LinesStart     int          // first source line number in cache
+	LinesEnd       int          // last source line number in cache
+	CachedWidth    int          // width used for cached lines (0 = not cached)
+	ViewPos        int          // current view position (line number)
+	SearchPattern  string       // current search pattern
+	SearchMatches  []int        // line numbers with matches
+	SearchIndex    int          // current match index (-1 if no search active)
+	SearchLimitHit bool         // true if search stopped at 99 matches
+	IsBinary       bool         // true if content is binary
+	Size           int64        // size in bytes (useful for binary files)
+	SHA256         string       // SHA256 hash (for binary files)
+	DeleteFunc     func() error // function to delete this item from persistent storage
 
 	pager *Pager // NEW: Streaming pager for content access
 }
