@@ -23,15 +23,8 @@ A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a 
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/yiblet/rem
-cd rem
-
-# Build the binary
-go build -o rem
-
-# Optional: Move to your PATH
-sudo mv rem /usr/local/bin/
+## Install via Go (recommended)
+go install github.com/yiblet/rem@latest
 ```
 
 ## Quick Start
@@ -182,38 +175,6 @@ The TUI provides a powerful dual-pane interface for browsing and searching histo
 - Search highlights all matches with current match emphasized
 - Each item remembers its own scroll position and search state
 
-## Queue Behavior (LIFO)
-
-- **Position 0**: Top of queue - most recently added item
-- **Positions 1-254**: Historical entries in reverse chronological order
-- **Automatic Management**: Oldest entries removed when exceeding configured limit (default 255)
-- **LIFO (Last In, First Out)**: Most recent content always at index 0
-
-## Configuration and Storage
-
-### Database Location
-
-rem uses SQLite for reliable data storage. The database location follows this precedence:
-1. `--db-path` CLI flag (highest priority)
-2. `REM_DB_PATH` environment variable
-3. Default: `~/.config/rem/rem.db` (lowest priority)
-
-```bash
-# Set custom location via environment variable
-export REM_DB_PATH="$HOME/my-rem.db"
-rem store < file.txt
-
-# Or use CLI flag
-rem --db-path /custom/rem.db store < file.txt
-```
-
-### Directory Structure
-
-```
-~/.config/rem/
-└── rem.db                            # SQLite database with history
-```
-
 ### Configuration
 
 Configuration is stored in the database and managed via the `rem config` command:
@@ -270,22 +231,6 @@ rem clear --force          # Clear without confirmation
 
 - **Code Development**: Store and retrieve code snippets, error messages, and API responses
 - **Documentation**: Manage multiple text passages when writing docs
-- **Data Analysis**: Keep history of SQL queries, log snippets, or data samples
-- **Debugging**: Store stack traces, error logs, and debug output
-- **General Productivity**: Never lose that important text you copied earlier
-- **Command Line Workflows**: Build pipelines with rem as an intermediate buffer
-
-## Project Status
-
-rem is production-ready with all core features implemented:
-- ✅ Complete CLI interface with store/get/config/clear/search commands
-- ✅ Interactive TUI with dual-pane viewer and vim-style navigation
-- ✅ Full search functionality with regex support and highlighting
-- ✅ Configurable history limits and storage locations
-- ✅ Binary file detection and handling
-- ✅ Individual item deletion from TUI
-- ✅ Environment variable support
-- ✅ Comprehensive test coverage
 
 ## Development
 
@@ -307,15 +252,35 @@ go build -o rem
 go run ./cmd/demo/
 ```
 
-## Contributing
+## Queue Behavior (LIFO)
 
-Contributions are welcome! Please see the project structure:
-- `internal/queue/` - Queue management and persistence
-- `internal/cli/` - Command-line interface
-- `internal/tui/` - Interactive terminal UI
-- `internal/remfs/` - Filesystem abstraction
-- `internal/config/` - Configuration management
+- **Position 0**: Top of queue - most recently added item
+- **Positions 1-254**: Historical entries in reverse chronological order
+- **Automatic Management**: Oldest entries removed when exceeding configured limit (default 255)
+- **LIFO (Last In, First Out)**: Most recent content always at index 0
 
-## License
+## Configuration and Storage
 
-[License information will be added]
+### Database Location
+
+rem uses SQLite for reliable data storage. The database location follows this precedence:
+1. `--db-path` CLI flag (highest priority)
+2. `REM_DB_PATH` environment variable
+3. Default: `~/.config/rem/rem.db` (lowest priority)
+
+```bash
+# Set custom location via environment variable
+export REM_DB_PATH="$HOME/my-rem.db"
+rem store < file.txt
+
+# Or use CLI flag
+rem --db-path /custom/rem.db store < file.txt
+```
+
+### Directory Structure
+
+```
+~/.config/rem/
+└── rem.db                            # SQLite database with history
+```
+
