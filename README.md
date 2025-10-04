@@ -16,7 +16,9 @@ A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a 
 - **Advanced Search**: Regex-based search across entire history
 - **History Management**: Clear all history or delete individual items
 - **Binary File Support**: Detects and handles binary content appropriately
-- **Environment Variables**: Customize history location via `REM_HISTORY`
+- **Titled Entries**: Add custom titles to stored items for easier identification
+- **SQLite Storage**: Fast and reliable database-backed storage
+- **Environment Variables**: Customize database location via `REM_DB_PATH`
 
 ## Installation
 
@@ -37,7 +39,7 @@ sudo mv rem /usr/local/bin/
 ```bash
 # Store some content
 echo "Hello, world!" | rem store
-echo "Second item" | rem store
+rem store --title "My Note" file.txt
 
 # Launch interactive viewer
 rem get
@@ -52,13 +54,17 @@ rem get -c 1     # Copy second item to clipboard
 ### Store Operations (Enqueue to Queue)
 
 ```bash
-# Store from stdin
+# Store from stdin (auto-generated title)
 echo "content" | rem store
 cat file.txt | rem store
 
 # Store from files (supports multiple files)
 rem store file.txt
 rem store file1.txt file2.txt file3.txt
+
+# Store with custom title
+rem store --title "My Note" file.txt
+rem store -t "Important" file1.txt file2.txt
 
 # Store from clipboard
 rem store -c
@@ -91,27 +97,35 @@ rem get 2 data.txt    # Save third item to file
 rem config list
 
 # Get specific configuration value
-rem config get history-limit
-rem config get history-location
+rem config get history_limit
 
 # Set configuration values
-rem config set history-limit 100      # Set max items to 100
-rem config set history-limit 50       # Set max items to 50
-rem config set show-binary true       # Show binary file previews
+rem config set history_limit 100      # Set max items to 100
+rem config set history_limit 50       # Set max items to 50
 ```
 
 ### Search History
 
 ```bash
-# Search for pattern (shows first match)
+# Search for pattern (shows first match content)
 rem search 'error'
-rem search 'function.*main'
+rem search 'error.*log'
 
 # Show only index of first match
 rem search -i 'pattern'
 
-# Show all matching items
+# Show all matching items (concatenated)
 rem search -a 'TODO'
+
+# Show indexes of all matching items
+rem search -a -i 'pattern'
+
+# Search in specific fields
+rem search --title 'config'      # Search titles only
+rem search --content 'password'  # Search content only
+
+# Case-sensitive search
+rem search -s 'CaseSensitive'
 ```
 
 ### History Management
@@ -177,42 +191,42 @@ The TUI provides a powerful dual-pane interface for browsing and searching histo
 
 ## Configuration and Storage
 
-### History Location
+### Database Location
 
-The history is stored with the following precedence:
-1. `--history` CLI flag (highest priority)
-2. `REM_HISTORY` environment variable
-3. Configuration file setting
-4. Default: `~/.config/rem/history/` (lowest priority)
+rem uses SQLite for reliable data storage. The database location follows this precedence:
+1. `--db-path` CLI flag (highest priority)
+2. `REM_DB_PATH` environment variable
+3. Default: `~/.config/rem/rem.db` (lowest priority)
 
 ```bash
 # Set custom location via environment variable
-export REM_HISTORY="$HOME/my-custom-location"
+export REM_DB_PATH="$HOME/my-rem.db"
 rem store < file.txt
 
 # Or use CLI flag
-rem --history /path/to/history store < file.txt
+rem --db-path /custom/rem.db store < file.txt
 ```
 
 ### Directory Structure
 
 ```
 ~/.config/rem/
-├── history/                          # Queue content storage
-│   ├── 2025-09-29T10-15-30.123456-07-00.rem
-│   ├── 2025-09-29T10-16-45.789012-07-00.rem
-│   └── ...
-└── config.yaml                       # Configuration file
+└── rem.db                            # SQLite database with history
 ```
 
-### Configuration File
+### Configuration
 
-Located at `~/.config/rem/config.yaml`:
+Configuration is stored in the database and managed via the `rem config` command:
 
-```yaml
-history-limit: 255        # Maximum number of items (1-999)
-show-binary: false        # Show binary file metadata
-history-location: ""      # Custom history directory (optional)
+```bash
+# View all settings
+rem config list
+
+# View specific setting
+rem config get history_limit
+
+# Update settings
+rem config set history_limit 100
 ```
 
 ## Complete Examples
@@ -221,7 +235,8 @@ history-location: ""      # Custom history directory (optional)
 # Store workflow
 echo "First item" | rem store
 echo "Second item" | rem store
-rem store code.go
+rem store --title "My Code" code.go
+rem store -t "Config Files" file1.txt file2.txt
 rem store -c  # Store current clipboard
 
 # Access workflow
@@ -231,14 +246,20 @@ rem get 1 > saved.txt      # Save second item
 rem get -c 2               # Copy third item to clipboard
 
 # Search workflow
-rem search 'func.*main'    # Find first match
-rem search -a 'TODO'       # Find all matches
-rem search -i 'error'      # Get index only
+rem search 'error.*log'        # Find first match
+rem search -a 'TODO'           # Find all matches
+rem search -a -i 'pattern'     # Show all match indexes
+rem search --title 'config'    # Search titles only
+rem search -s 'CaseSensitive'  # Case-sensitive search
 
 # Configuration workflow
-rem config set history-limit 100
-rem config get history-limit
+rem config set history_limit 100
+rem config get history_limit
 rem config list
+
+# Database path
+rem --db-path /custom/rem.db store file.txt
+export REM_DB_PATH=/custom/rem.db  # Set via environment
 
 # Maintenance
 rem clear                  # Clear with confirmation
