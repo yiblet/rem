@@ -22,8 +22,32 @@ A powerful clipboard management tool that extends `pbcopy` and `pbpaste` with a 
 
 ## Installation
 
+### Install via Pre-built Binary
+
 ```bash
-## Install via Go (recommended)
+# Linux (amd64)
+curl -L https://github.com/yiblet/rem/releases/latest/download/rem-linux-amd64.tar.gz | tar xz
+mv rem-linux-amd64 ~/.local/bin/rem  # If ~/.local/bin isn't in your $PATH, you should put rem somewhere else like /usr/local/bin
+
+# Linux (arm64)
+curl -L https://github.com/yiblet/rem/releases/latest/download/rem-linux-arm64.tar.gz | tar xz
+mv rem-linux-arm64 ~/.local/bin/rem  # If ~/.local/bin isn't in your $PATH, you should put rem somewhere else like /usr/local/bin
+
+# macOS (Intel)
+curl -L https://github.com/yiblet/rem/releases/latest/download/rem-darwin-amd64.tar.gz | tar xz
+mv rem-darwin-amd64 ~/.local/bin/rem  # If ~/.local/bin isn't in your $PATH, you should put rem somewhere else like /usr/local/bin
+
+# macOS (Apple Silicon)
+curl -L https://github.com/yiblet/rem/releases/latest/download/rem-darwin-arm64.tar.gz | tar xz
+mv rem-darwin-arm64 ~/.local/bin/rem  # If ~/.local/bin isn't in your $PATH, you should put rem somewhere else like /usr/local/bin
+
+# Windows
+# Download from: https://github.com/yiblet/rem/releases/latest/download/rem-windows-amd64.exe.zip
+```
+
+### Install via Go
+
+```bash
 go install github.com/yiblet/rem@latest
 ```
 
